@@ -1,0 +1,67 @@
+:: CloneCondaEnv.bat
+::
+:: Created By:	Julie Tripp
+::
+:: 				03/01/2024
+::
+:: This script is intended to be run from Command Prompt on the ArcGIS Server machine as Administrator.
+::
+:: This script clones the specified environment and installs the geoglows, xlsxwriter, python-srtm, and pywin32 packages.
+:: It also sets the SRTM1_DIR and SRTM3_DIR environment variables to the SRTM1 and SRTM3 directories.
+:: It then creates a Python script to check if the packages are installed and runs the script.
+:: The script is then deleted.
+::
+set /p dir="Enter the path to the ArcGIS Server Python folder: "
+:: Change the path to the Python folder of the ArcGIS Server
+:: cd C:\Program Files\ArcGIS\Server\framework\runtime\ArcGIS\bin\Python
+cd %dir%
+set /p new_env="Enter the name of the new environment, e.g. clone20240301: "
+set /p clone_env="Enter the name of the environment to clone, e.g. arcgispro-py3: "
+echo Create a new conda environment by cloning the %clone_env% environment
+conda create --name %new_env% --clone %clone_env% --pinned --no-shortcuts
+echo Activate the new environment
+activate %new_env%
+echo Install geoglows dependent libraries
+conda install llvmlite
+conda install numba
+conda install plotly
+conda install python_abi
+conda install shapely
+echo Install geoglows using pip
+pip install geoglows
+echo Install xlsxwriter
+conda install -c conda-forge xlsxwriter
+echo Install python-srtm packages
+pip install python-srtm
+setx SRTM1_DIR D:\GenericArcGISDataDir\SRTM\SRTM1 /m
+setx SRTM3_DIR D:\GenericArcGISDataDir\SRTM\SRTM3 /m
+echo Install pywin32
+pip install pywin32
+echo Create a Python script to check if packages are installed
+echo def is_package_installed(package_name): > check_packages.py
+echo     try: >> check_packages.py
+echo         __import__(package_name) >> check_packages.py
+echo         return True >> check_packages.py
+echo     except ImportError: >> check_packages.py
+echo         return False >> check_packages.py
+echo packages = ['geoglows', 'srtm', 'xlsxwriter', 'win32com.client'] >> check_packages.py
+echo for package in packages: >> check_packages.py
+echo     if is_package_installed(package): >> check_packages.py
+echo         print(f'{package} is installed.') >> check_packages.py
+echo     else: >> check_packages.py
+echo         print(f'{package} is not installed.') >> check_packages.py
+echo Run the Python script
+python check_packages.py
+echo Delete the Python script
+del check_packages.py
+echo Validate the new environment
+pip check
+echo Cloning complete
+echo Run the following command to change the default ArcGIS Enterprise environment to the new environment:
+echo conda proswap -n %new_env% --all-users
+echo Alternatively, change the registry key manually:
+echo HKEY_LOCAL_MACHINE\SOFTWARE\ESRI\Server11.2\PythonCondaEnv
+
+:: C:\Program Files\ArcGIS\Server\framework\runtime\ArcGIS\bin\Python\envs\clone20240304
+
+exit /b %ERRORLEVEL%

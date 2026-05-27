@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ArcGIS Enterprise Log Viewer</title>
+<link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='org_logo.ico') }}">
+<link rel="stylesheet" href="https://cdn.datatables.net/2.1.8/css/dataTables.dataTables.min.css">
+<style>
+  /* Example brand palette (April 2024 brand guidelines) */
+  :root {
+    --org-green: #005445;            /* primary dark green */
+    --org-teal: #1A333D;             /* dark teal / navy */
+    --org-sage: #BFCF91;             /* sage / olive green */
+    --org-offwhite-green: #F5F7F0;
+    --org-cream: #FAF0E5;            /* brand background */
+    --org-pale-teal: #97CACF;
+    --org-light-blue: #ABDEE3;
+    --org-very-pale-blue: #D9EDF0;
+    --org-near-white-blue: #F2FAFA;
+    --org-brown: #6E4639;
+    --org-rust: #AF5D22;
+    --org-orange: #C76600;
+    --org-tan: #E3B280;
+    /* Brand-approved fallbacks (Office Docs typefaces, per brand book) */
+    --org-font-serif: Georgia, "Times New Roman", serif;
+    --org-font-sans: Arial, Helvetica, sans-serif;
+  }
+
+  body {
+    font-family: var(--org-font-sans);
+    margin: 0;
+    background: var(--org-cream);
+    color: var(--org-teal);
+  }
+
+  header { background: var(--org-green); color: var(--org-cream); padding: 1rem 1.5rem 0.85rem; }
+  header .brand { display: flex; align-items: center; gap: 1rem; }
+  header .brand-mark {
+    width: 48px; height: 48px;
+    /* honor the brand "safe area" — pad around the mark and keep it on a
+       solid brand background so no other element crowds it */
+    flex-shrink: 0;
+    image-rendering: -webkit-optimize-contrast;
+  }
+  header h1 {
+    font-family: var(--org-font-serif);
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 400;
+    letter-spacing: 0.01em;
+  }
+  header .rule {
+    display: block;
+    width: 42px;
+    height: 2px;
+    background: var(--org-sage);
+    margin: 0.4rem 0 0.4rem;
+  }
+  header .subtitle { font-size: 0.78rem; opacity: 0.85; }
+
+  .toolbar {
+    background: white;
+    padding: 0.7rem 1.5rem;
+    border-bottom: 1px solid var(--org-sage);
+    display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center;
+    font-size: 0.85rem;
+  }
+  .toolbar label { color: var(--org-teal); }
+  .toolbar select, .toolbar button {
+    padding: 0.4rem 0.75rem;
+    font-size: 0.85rem;
+    font-family: var(--org-font-sans);
+    border: 1px solid var(--org-sage);
+    border-radius: 4px;
+    background: white;
+    color: var(--org-teal);
+    cursor: pointer;
+  }
+  .toolbar select { min-width: 260px; }
+  .toolbar select:focus, .toolbar button:focus {
+    outline: 2px solid var(--org-pale-teal);
+    outline-offset: 1px;
+  }
+  .toolbar .divider { border-left: 1px solid var(--org-sage); height: 24px; margin: 0 0.3rem; }
+  .toolbar .refresh {
+    background: var(--org-green);
+    color: var(--org-cream);
+    border-color: var(--org-green);
+    margin-left: auto;
+  }
+  .toolbar .refresh:hover { background: var(--org-teal); border-color: var(--org-teal); }
+  .toolbar .status { color: var(--org-teal); opacity: 0.7; font-size: 0.8rem; }
+
+  #refresh-status {
+    display: none;
+    padding: 0.6rem 1.5rem;
+    background: var(--org-very-pale-blue);
+    border-bottom: 1px solid var(--org-pale-teal);
+    font-size: 0.85rem;
+    color: var(--org-teal);
+  }
+  #refresh-status.ok { background: var(--org-offwhite-green); border-color: var(--org-sage); }
+  #refresh-status.error { background: #F6D8C2; border-color: var(--org-rust); }
+  #refresh-status pre {
+    margin: 0.4rem 0 0;
+    max-height: 200px; overflow: auto;
+    background: rgba(0,0,0,0.05);
+    padding: 0.4rem; font-size: 0.75rem;
+    font-family: Consolas, "Courier New", monospace;
+  }
+
+  .truncation-banner {
+    padding: 0.55rem 1.5rem;
+    background: #FAEFD9;
+    border-bottom: 1px solid var(--org-orange);
+    color: var(--org-teal);
+    font-size: 0.85rem;
+  }
+
+  .content { padding: 1rem 1.5rem; }
+  .empty {
+    color: var(--org-teal); opacity: 0.7;
+    padding: 2rem; text-align: center;
+    background: white; border-radius: 4px;
+    border: 1px solid var(--org-sage);
+  }
+
+  table.dataTable { background: white; font-size: 0.85rem; font-family: var(--org-font-sans); }
+  table.dataTable thead th {
+    background: var(--org-green);
+    color: var(--org-cream);
+    font-weight: 500;
+    font-family: var(--org-font-serif);
+    letter-spacing: 0.02em;
+  }
+  table.dataTable tbody td { vertical-align: top; padding: 0.4rem 0.5rem; color: var(--org-teal); }
+  table.dataTable tbody tr { border-left: 4px solid transparent; }
+  table.dataTable tbody tr:hover > td { background-color: var(--org-offwhite-green) !important; }
+
+  /* Severity rows: brand-aligned tints + a colored left-border accent */
+  tr.severity-SEVERE { border-left-color: var(--org-rust) !important; }
+  tr.severity-SEVERE > td { background-color: #F7DDC8 !important; }
+
+  tr.severity-ERROR { border-left-color: var(--org-brown) !important; }
+  tr.severity-ERROR > td { background-color: #EFC9AE !important; }
+
+  tr.severity-WARNING { border-left-color: var(--org-orange) !important; }
+  tr.severity-WARNING > td { background-color: #FAEFD9 !important; }
+
+  tr.severity-INFO { border-left-color: var(--org-pale-teal) !important; }
+  tr.severity-INFO > td { background-color: var(--org-very-pale-blue) !important; }
+
+  tr.severity-FINE,
+  tr.severity-VERBOSE,
+  tr.severity-DEBUG { border-left-color: var(--org-sage) !important; }
+  tr.severity-FINE > td,
+  tr.severity-VERBOSE > td,
+  tr.severity-DEBUG > td { background-color: var(--org-offwhite-green) !important; }
+
+  td.col-time {
+    white-space: nowrap;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 0.78rem;
+    color: var(--org-teal);
+    width: 110px;
+  }
+  td.col-type { font-weight: 700; width: 80px; }
+  td.col-source {
+    width: 90px;
+    max-width: 90px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.78rem;
+  }
+  td.col-message { min-width: 480px; width: 65%; }
+
+  td.col-logfile {
+    white-space: nowrap;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 0.75rem;
+    color: var(--org-teal);
+    opacity: 0.85;
+    width: 220px;
+  }
+  td.col-logfile a {
+    color: var(--org-green);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--org-sage);
+  }
+  td.col-logfile a:hover {
+    color: var(--org-teal);
+    border-bottom-color: var(--org-teal);
+  }
+
+  td.col-code { width: 70px; white-space: nowrap; }
+  td.col-service, td.col-machine, td.col-user {
+    max-width: 120px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.78rem;
+  }
+
+  .msg-cell { cursor: pointer; position: relative; padding-right: 60px; }
+  .msg-cell .copy-btn {
+    position: absolute;
+    top: 0;
+    right: 0;
+    padding: 1px 7px;
+    font-size: 0.7rem;
+    font-family: var(--org-font-sans);
+    background: var(--org-cream);
+    color: var(--org-green);
+    border: 1px solid var(--org-sage);
+    border-radius: 3px;
+    cursor: pointer;
+    opacity: 0.55;
+    transition: opacity 0.12s, background 0.12s, color 0.12s;
+  }
+  .msg-cell:hover .copy-btn,
+  .msg-cell.expanded .copy-btn { opacity: 1; }
+  .msg-cell .copy-btn:hover {
+    background: var(--org-offwhite-green);
+    border-color: var(--org-green);
+  }
+  .msg-cell .copy-btn.copied {
+    background: var(--org-green);
+    color: var(--org-cream);
+    border-color: var(--org-green);
+    opacity: 1;
+  }
+  .msg-cell .copy-btn.failed {
+    background: #F6D8C2;
+    color: var(--org-brown);
+    border-color: var(--org-rust);
+    opacity: 1;
+  }
+  .msg-cell .msg-full {
+    display: none;
+    white-space: pre-wrap;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 0.78rem;
+    background: var(--org-offwhite-green);
+    padding: 0.5rem; border-radius: 3px;
+    margin-top: 0.3rem; max-height: 400px; overflow: auto;
+    border: 1px solid var(--org-sage);
+  }
+  .msg-cell.expanded .msg-short { color: var(--org-teal); opacity: 0.55; }
+  .msg-cell.expanded .msg-full { display: block; }
+  .msg-cell .hint { font-size: 0.7rem; color: var(--org-rust); margin-left: 0.4rem; }
+
+  /* DataTables pagination / length / search controls — brand colors */
+  .dt-paging button.dt-paging-button,
+  .dt-length select, .dt-search input {
+    color: var(--org-teal) !important;
+    border-color: var(--org-sage) !important;
+    font-family: var(--org-font-sans) !important;
+  }
+  .dt-paging button.current,
+  .dt-paging button.current:hover {
+    background: var(--org-green) !important;
+    color: var(--org-cream) !important;
+    border-color: var(--org-green) !important;
+  }
+  .dt-info, .dt-length label, .dt-search label { color: var(--org-teal); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <img src="{{ url_for('static', filename='org_logo.ico') }}" alt="Example" class="brand-mark">
+    <div>
+      <h1>ArcGIS Enterprise Log Viewer</h1>
+      <span class="rule"></span>
+      <div class="subtitle">Aggregated monitoring logs from ArcGIS Enterprise and Windows services</div>
+    </div>
+  </div>
+</header>
+
+<div class="toolbar">
+  <form method="get" style="display: flex; gap: 0.4rem; align-items: center; margin: 0;">
+    <label for="range-select">Time frame:</label>
+    <select id="range-select" name="range" onchange="this.form.submit()">
+      {% for key, label in ranges %}
+        <option value="{{ key }}" {% if key == selected_range %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </form>
+
+  <span class="divider"></span>
+
+  <label for="source-select">Source:</label>
+  <select id="source-select">
+    <option value="">All</option>
+    {% for s in sources %}
+      <option value="{{ s }}">{{ s }}</option>
+    {% endfor %}
+  </select>
+
+  <label for="type-select">Type:</label>
+  <select id="type-select">
+    <option value="">All</option>
+    <option value="SEVERE">SEVERE</option>
+    <option value="ERROR" selected>ERROR (incl. SEVERE)</option>
+    <option value="WARNING">WARNING (incl. SEVERE, ERROR)</option>
+    <option value="INFO">INFO (incl. above)</option>
+    <option value="FINE">FINE (incl. above)</option>
+    <option value="VERBOSE">VERBOSE (incl. above)</option>
+    <option value="DEBUG">DEBUG (incl. above)</option>
+  </select>
+
+  <span class="status">{{ rows|length }} row{{ '' if rows|length == 1 else 's' }} from {{ file_count }} file{{ '' if file_count == 1 else 's' }}</span>
+
+  <button class="refresh" onclick="runRefresh()" title="Re-runs the monitoring scripts. Will send PowerAutomate emails if new alerts are found.">
+    &#x21bb; Refresh (re-run scripts)
+  </button>
+</div>
+
+<div id="refresh-status"></div>
+
+{% if truncated %}
+<div class="truncation-banner">
+  Showing newest <strong>{{ max_files }}</strong> of <strong>{{ matched_count }}</strong> files matched for <strong>{{ selected_range_label }}</strong>.
+  Narrow the range to include older files.
+</div>
+{% endif %}
+
+<div class="content">
+  {% if not rows %}
+    <div class="empty">
+      No log entries for <strong>{{ selected_range_label }}</strong>
+      ({{ file_count }} file{{ '' if file_count == 1 else 's' }} matched).
+    </div>
+  {% else %}
+    <table id="logs" class="display compact" style="width:100%">
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Type</th>
+          <th>Message</th>
+          <th>Source</th>
+          <th>Log file</th>
+          <th>Code</th>
+          <th>Service</th>
+          <th>Machine</th>
+          <th>User</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+          <tr class="severity-{{ r.get('type','') }}" data-source="{{ r.get('logSource','') }}">
+            <td class="col-time" data-order="{{ r.get('time_iso','') }}">{{ r.get('time','') }}</td>
+            <td class="col-type">{{ r.get('type','') }}</td>
+            <td class="col-message">
+              {% set msg = r.get('message','') or '' %}
+              <div class="msg-cell" onclick="this.classList.toggle('expanded')">
+                <button type="button" class="copy-btn" onclick="copyMessage(this, event)" title="Copy full message">Copy</button>
+                <span class="msg-short">{{ msg[:180] }}{% if msg|length > 180 %}&hellip;{% endif %}</span>
+                {% if msg|length > 180 %}<span class="hint">click to expand</span>{% endif %}
+                <div class="msg-full">{{ msg }}</div>
+              </div>
+            </td>
+            <td class="col-source">{{ r.get('logSource','') }}</td>
+            <td class="col-logfile">
+              {% set lf = r.get('logFile','') %}
+              {% if lf %}
+                <a href="{{ url_for('serve_file', filename=lf) }}" target="_blank" rel="noopener">{{ lf }}</a>
+              {% endif %}
+            </td>
+            <td class="col-code">{{ r.get('code','') }}</td>
+            <td class="col-service" title="{{ r.get('source','') }}">{{ r.get('source','') }}</td>
+            <td class="col-machine" title="{{ r.get('machine','') }}">{{ r.get('machine','') }}</td>
+            <td class="col-user" title="{{ r.get('user','') }}">{{ r.get('user','') }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</div>
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.datatables.net/2.1.8/js/dataTables.min.js"></script>
+<script>
+let table = null;
+let currentSource = '';
+let currentType = 'ERROR';
+
+// Severity hierarchy, most severe first. Selecting a level shows that level
+// and everything more severe (lower index).
+const TYPE_SEVERITY = {
+  SEVERE: 0, ERROR: 1, WARNING: 2, INFO: 3, FINE: 4, VERBOSE: 5, DEBUG: 6
+};
+
+function typeAllowed(rowType) {
+  if (!currentType) return true;
+  const cutoff = TYPE_SEVERITY[currentType];
+  const rowSev = TYPE_SEVERITY[rowType];
+  if (cutoff === undefined) return true;
+  if (rowSev === undefined) return false;
+  return rowSev <= cutoff;
+}
+
+$(function() {
+  if (!document.getElementById('logs')) return;
+
+  table = new DataTable('#logs', {
+    pageLength: 50,
+    lengthMenu: [25, 50, 100, 250, 500],
+    order: [[0, 'desc']],
+    columnDefs: [
+      { targets: 2, orderable: false }
+    ]
+  });
+
+  // Custom source filter on column 3 (Source/logSource)
+  DataTable.ext.search.push(function(settings, data) {
+    if (!currentSource) return true;
+    return data[3] === currentSource;
+  });
+
+  // Custom severity filter on column 1 (Type) — hierarchical
+  DataTable.ext.search.push(function(settings, data) {
+    return typeAllowed(data[1]);
+  });
+
+  const sourceSelect = document.getElementById('source-select');
+  if (sourceSelect) {
+    sourceSelect.addEventListener('change', function() {
+      currentSource = this.value;
+      table.draw();
+    });
+  }
+
+  const typeSelect = document.getElementById('type-select');
+  if (typeSelect) {
+    typeSelect.addEventListener('change', function() {
+      currentType = this.value;
+      table.draw();
+    });
+  }
+});
+
+function runRefresh() {
+  if (!confirm('Re-run the monitoring scripts?\n\nThis will query the live ArcGIS Enterprise (portal/server) and Windows services state. PowerAutomate emails will fire if new alerts are found.')) {
+    return;
+  }
+  const status = document.getElementById('refresh-status');
+  status.style.display = 'block';
+  status.className = '';
+  status.innerHTML = 'Running monitoring scripts&hellip; this may take a couple of minutes.';
+
+  fetch('/refresh', { method: 'POST' })
+    .then(r => r.json().then(data => ({ status: r.status, data })))
+    .then(({ status: httpStatus, data }) => {
+      if (data.ok) {
+        status.className = 'ok';
+        status.innerHTML = 'All scripts completed successfully. Reloading&hellip;';
+        setTimeout(() => location.reload(), 1200);
+      } else {
+        status.className = 'error';
+        const parts = ['<strong>One or more scripts failed:</strong>'];
+        if (Array.isArray(data.results) && data.results.length) {
+          data.results.forEach(r => {
+            const label = r.ok ? 'OK' : 'FAILED';
+            let line = '<div><strong>' + escapeHtml(r.script) + '</strong>: ' + label;
+            if (r.returncode !== undefined) line += ' (rc=' + r.returncode + ')';
+            if (r.error) line += ' &mdash; ' + escapeHtml(r.error);
+            line += '</div>';
+            parts.push(line);
+            if (!r.ok && r.stderr_tail) {
+              parts.push('<pre>' + escapeHtml(r.stderr_tail) + '</pre>');
+            }
+          });
+        } else if (data.error) {
+          parts.push('<div>' + escapeHtml(data.error) + '</div>');
+        }
+        status.innerHTML = parts.join('');
+      }
+    })
+    .catch(err => {
+      status.className = 'error';
+      status.textContent = 'Request failed: ' + err;
+    });
+}
+
+function copyMessage(btn, evt) {
+  // Don't let the click bubble to the cell's expand/collapse handler.
+  evt.stopPropagation();
+  const cell = btn.closest('.msg-cell');
+  const full = cell ? cell.querySelector('.msg-full') : null;
+  const text = full ? full.textContent : '';
+  if (!text) return;
+
+  const flash = (label, klass) => {
+    btn.textContent = label;
+    btn.classList.add(klass);
+    setTimeout(() => {
+      btn.textContent = 'Copy';
+      btn.classList.remove(klass);
+    }, 1200);
+  };
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text)
+      .then(() => flash('Copied!', 'copied'))
+      .catch(() => flash('Failed', 'failed'));
+  } else {
+    // Fallback for very old browsers — temp textarea + execCommand
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      flash(ok ? 'Copied!' : 'Failed', ok ? 'copied' : 'failed');
+    } catch (e) {
+      flash('Failed', 'failed');
+    }
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+</script>
+</body>
+</html>

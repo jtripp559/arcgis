@@ -1,0 +1,3 @@
+@echo off
+C:\Users\JulieTripp\AppData\Local\ESRI\conda\envs\arcgispro-py3_2-clone\python.exe "D:\GenericScriptsDir\MonitorArcGISEnterpriseLogs.py"
+exit /b %ERRORLEVEL%
