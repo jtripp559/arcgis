@@ -15,7 +15,7 @@ from arcgis.mapping import WebMap
 import pandas as pd
 
 # Configuration
-PORTAL_URL = 'https://gis.example.com/arcgisportal'  # Change to your portal URL
+PORTAL_URL = 'https://maps.rrgnbs.com/arcgisportal'  # Change to your portal URL
 MAX_ITEMS = 10000  # Maximum number of web maps to process
 
 # Global variables

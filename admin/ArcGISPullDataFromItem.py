@@ -8,8 +8,8 @@ Purpose: This script is used to pull data from ArcGIS items and export it to a J
 NOTES:
 Upload ShapeFile to DB Example:
 arcpy.conversion.FeatureClassToGeodatabase(
-    Input_Features=r"T:/GenericArcGISDataDir/Rasters/OutputDir1/CHELSA/ChangePrecipitationTemperature.shp;T:/GenericArcGISDataDir/Rasters/OutputDir1/Berghuijs/Global_Recharge_Fraction_mm_y_Berghuijs_2022_Filled.shp",
-    Output_Geodatabase=r"T:/GenericArcGISDataDir/Enterprise/Connections/ORG_DB5_sde.sde"
+    Input_Features=r"T:/ArcGISDataset/Rasters/GlobalProspector/CHELSA/ChangePrecipitationTemperature.shp;T:/ArcGISDataset/Rasters/GlobalProspector/Berghuijs/Global_Recharge_Fraction_mm_y_Berghuijs_2022_Filled.shp",
+    Output_Geodatabase=r"T:/ArcGISDataset/Enterprise/Connections/NBS_WS_sde.sde"
 )
 
 '''
@@ -25,12 +25,22 @@ import arcpy
 import pandas as pd
 from datetime import datetime
 import logging
+import sys
 
-arcpy.env.mask = r"D:\GenericArcGISDataDir\GIS\General GIS Data\Worldwide\World.shp"
+# Credential store (Windows Credential Manager) helper lives in this script's directory; best-effort
+# import so logins come from the store first, with the same interactive prompt as the fallback. If it
+# isn't importable, connect_to_arcgis() falls back to the original inline prompt + login.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    import credential_store
+except Exception:
+    credential_store = None
+
+arcpy.env.mask = r"T:\ArcGISDataset\GIS\General GIS Data\Worldwide\World.shp"
 arcpy.env.cellSize = "MINOF"
 arcpy.env.overwriteOutput = True
 
-raster_upload_db = r"D:\GenericArcGISConnectionsDir\ORG_DB5_sde.sde"
+raster_upload_db = r"T:\ArcGISDataset\Enterprise\Connections\NBS_WS_sde.sde"
 
 item_list = ['2622d0346e264f469d02d3b59212845e']
 
@@ -125,33 +135,53 @@ def connect_to_arcgis():
     connected = False
 
     # ArcGIS Online
-    arcgis_url_agol = 'https://myorg.maps.arcgis.com'
+    arcgis_url_agol = 'https://rrg.maps.arcgis.com'
     base_url_agol = 'https://services.arcgis.com/cb1XtHtD3d6ZWNAQ/arcgis/rest/services'
     # Old ArcGIS Enterprise
-    arcgis_url_ent = 'https://gis2.example.com/portal'
-    base_url_ent = 'https://gis2.example.com/server/rest/services'
+    arcgis_url_rrg = 'https://gis.renewablegroup.com/portal'
+    base_url_rrg = 'https://gis.renewablegroup.com/server/rest/services'
     # New ArcGIS Enterprise
-    arcgis_url_org = 'https://gis.example.com/arcgisportal'
-    base_url_org = 'https://gis.example.com/arcgisserver/rest/services/'
+    arcgis_url_nbs = 'https://maps.rrgnbs.com/arcgisportal'
+    base_url_nbs = 'https://maps.rrgnbs.com/arcgisserver/rest/services/'
     
-    which_portal = get_user_input("Which ArcGIS portal (AGOL, ENT, ORG)", default_value='ORG')
+    which_portal = get_user_input("Which ArcGIS portal (AGOL, RRG, NBS)", default_value='NBS')
     which_portal = which_portal.upper()
     if which_portal.startswith('A'):
         arcgis_url = arcgis_url_agol
         base_url = base_url_agol
         selected_portal = 'AGOL'
     elif which_portal.startswith('R'):
-        arcgis_url = arcgis_url_ent
-        base_url = base_url_ent
-        selected_portal = 'ENT'
+        arcgis_url = arcgis_url_rrg
+        base_url = base_url_rrg
+        selected_portal = 'RRG'
     else:
-        arcgis_url = arcgis_url_org
-        base_url = base_url_org
-        selected_portal = 'ORG'
+        arcgis_url = arcgis_url_nbs
+        base_url = base_url_nbs
+        selected_portal = 'NBS'
     filename_base = f'{filename_base}_{selected_portal}'
     
-    # Get arcgis_username and password from the user
-    arcgis_username = get_user_input("ArcGIS Username (not SSO)", default_value='gisadmin')
+    # Connect via the shared credential_store.connect() helper: CREDENTIALS FIRST (the Credential Manager
+    # entry keyed by the selected portal -- 'agol' for AGOL, else 'portal'), with the active Pro session
+    # and a username/password prompt as fallbacks. sign_in_arcpy=True ALSO does arcpy.SignInToPortal (this
+    # script mixes arcpy with the arcgis API); arcpy sign-in is process-wide, so it applies here too.
+    # verify_cert=False is passed through to GIS(). Falls back to the original inline login if the shared
+    # module isn't importable.
+    cred_key = 'agol' if selected_portal == 'AGOL' else 'portal'
+    if credential_store is not None:
+        try:
+            gis = credential_store.connect(arcgis_url, key=cred_key, default_username='rrgadmin',
+                                           sign_in_arcpy=True, verify_cert=False,
+                                           log=lambda m: log(m))
+            connected = True
+            arcgis_username = gis.properties.user.username
+            log(f"Connected to {arcgis_url} as {arcgis_username}")
+        except Exception as e:
+            log(f"Failed to connect to {arcgis_url} via credential_store.connect(): {e}", level='error')
+            log(traceback.format_exc())
+        return connected
+
+    # Fallback when the shared module isn't importable: prompt, then sign arcpy + GIS in directly.
+    arcgis_username = get_user_input("ArcGIS Username (not SSO)", default_value='rrgadmin')
     arcgis_password = getpass.getpass(f"**  ArcGIS Password for {arcgis_username}: ")
     if arcgis_username == "" or arcgis_password == "":
         log("Missing username or password.", level='error')
@@ -287,7 +317,7 @@ def export_image_layer(imagery_layer):
             results_dict[item.id]['export_path'] = db_path
             
             '''
-            # Note: Selection feature from D:\GenericArcGISDataDir\GIS\General GIS Data\Worldwide\World.shp
+            # Note: Selection feature from T:\ArcGISDataset\GIS\General GIS Data\Worldwide\World.shp
             arcpy.management.DownloadRasters(
                 in_image_service=image_url,
                 out_folder=output_dir,

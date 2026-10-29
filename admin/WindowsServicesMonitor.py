@@ -1,7 +1,7 @@
 # WindowsServicesMonitor.py
 #
 # Developer:    Julie Tripp
-#
+#               julie.tripp@rrgnbs.com
 # Date: 06/11/2024
 #
 # Description:  This script monitors if Windows services are running on remote (and local) servers.
@@ -24,7 +24,7 @@ import json
 # from pprint import pprint
 
 # Import send_email_using_powerautomate module with reload capability
-mods = [r'D:\GenericScriptsDir\send_email_using_powerautomate']
+mods = [r'T:\ArcGISDataset\Data Science Scripts\Source Controlled\gis_general\Scripts\ArcGIS Admin\send_email_using_powerautomate']
 for path in mods:
     sys.path.append(path)
 module_name = "send_email_using_powerautomate"
@@ -44,7 +44,7 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 output_dir = os.path.join(script_dir, 'Output')
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
-file_dir = r'C:\MS\OneDrive - Example Organization, Inc\SharePoint - ORG - GIS and IT\Programming\Monitoring\WindowsServicesMonitor'
+file_dir = r'C:\MS\OneDrive - RRG Nature Based Solutions, Inc\SharePoint - NBS - GIS and IT\Programming\Monitoring\WindowsServicesMonitor'
 if not os.path.exists(file_dir):
     file_dir = output_dir
 

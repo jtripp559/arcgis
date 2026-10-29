@@ -4,11 +4,11 @@ import arcpy.server
 from getpass import getpass
 import logging
 
-toolbox_path = r"D:\GenericArcGISDataDir\Data Science Scripts\Geoprocessing tools\Unpublished_Tools.atbx"
+toolbox_path = r"T:\ArcGISDataset\Data Science Scripts\Geoprocessing tools\Unpublished_Tools.atbx"
 web_tool_name = "TDriveTest"
 
-sddraft_dir = r"D:\GenericArcGISDataDir\Data Science Scripts\Drafts"
-federated_server_url = 'https://gis.example.com/arcgisserver'
+sddraft_dir = r"T:\ArcGISDataset\Data Science Scripts\Drafts"
+federated_server_url = 'https://maps.rrgnbs.com/arcgisserver'
 enterprise_version = "11.2"
 
 # initialize variables
@@ -39,8 +39,8 @@ def init_logging():
 
 def connect_to_portal():
     connected = False
-    portal_url = "https://gis.example.com/arcgisportal"
-    portal_username = "gisadmin"
+    portal_url = "https://maps.rrgnbs.com/arcgisportal"
+    portal_username = "rrgadmin"
 
     portal_password = getpass(f"**  ArcGIS Portal Password for {portal_username}: ")
     try:
@@ -61,7 +61,7 @@ def run_gp_tool():
         # NOTE: example of using parameters with the toolboxModule
         # parameters = toolboxModule.TDriveTest_UnpublishedTools.getParameterInfo()
         # parameters[0].value = "TDriveTest"
-        # parameters[1].value = "https://gis.example.com/arcgisserver"
+        # parameters[1].value = "https://maps.rrgnbs.com/arcgisserver"
         # tool_result = arcpy.TDriveTest_UnpublishedTools(parameters)
         tool_result = arcpy.TDriveTest_UnpublishedTools()
         success = True

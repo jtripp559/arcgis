@@ -2,7 +2,7 @@
 ================================================================================
 Script Name  : publish_features_to_agol_bulk.py
 Description  : To publish feature layers in ArcGIS Online (AGOL)
-               getting the information from Example ArcGIS Enterprise Portal
+               getting the information from RRG NBS ArcGIS Enterprise Portal
                by registering each layer as a proxied item using
                stored-credential authentication (serviceUsername/servicePassword).
 
@@ -25,21 +25,21 @@ Inputs       : layer_list  - Python list of dicts produced by
                GP_USER / GP_PASS - Stored credentials for the Enterprise Portal
                              used to authenticate the proxied service connections.
 
-Outputs      : Proxied Feature/Image Service items published to AGOL under specified
+Outputs      : Proxied Feature/Image Service items published to AGOL under spe=cified
                folder and group, e.g.:
-               folder  : Example Place Name
-               group   : ENT AGO Organization Datashare
+               folder  : RRGNBS Cacao Suitability
+               group   : RRG AGO Organization Datashare
 
 Dependencies : arcgis (ArcGIS API for Python), getpass
-               Valid AGOL account (user name @ myorg.maps.arcgis.com)
-               Valid Enterprise Portal credentials for gis.example.com
+               Valid AGOL account (user name @ rrg.maps.arcgis.com)
+               Valid Enterprise Portal credentials for maps.rrgnbs.com
 
 Notes        : - Items are added to root first then moved to avoid a known
                  NoneType folder in the ArcGIS API for Python.
                - GP_USER / GP_PASS are embedded as plain text; REMOVE password
                from Script.
 
-Author       :
+Author       : guillermo.ponce@rrgnbs.com
 Created      : 2026-03-26
 Last Modified: 2026-03-26
 ================================================================================
@@ -49,11 +49,11 @@ from arcgis.gis import GIS
 import getpass
 
 # 1. DIRECT LOGIN
-agol_user = input("Enter AGOL username: ").strip()
-agol_pass = getpass.getpass(f"Enter your password for the AGOL Cloud ({agol_user}): ")
+print("Enter your password for the AGOL Cloud (guillermo.ponce_nbs):")
+agol_pass = getpass.getpass()
 
 print("\nConnecting directly to AGOL with full privileges...")
-gis = GIS("https://myorg.maps.arcgis.com", agol_user, agol_pass)
+gis = GIS("https://rrg.maps.arcgis.com", "guillermo.ponce_nbs", agol_pass)
 
 # 2. Configuration to enable the option `Store Credentials`
 GP_USER = "GPUser"
@@ -62,9 +62,9 @@ GP_PASS = (
 )
 
 # Set folder and groups
-CLOUD_FOLDER_NAME = "Example Place Name"
+CLOUD_FOLDER_NAME = "RRGNBS Cacao Suitability"
 GROUP_SEARCH_TERM = (
-    "ENT AGO Organization Datashare"  ## Check the best group to use here
+    "RRG AGO Organization Datashare"  ## Check the best group to use here
 )
 
 # 3. ############## PASTE LIST GENERATED WITH extract_featureLayer_metadata_from_ArcGIS_portal.py
@@ -103,11 +103,11 @@ for item in layer_list:
             "title": str(item["title"]),
             "type": str(service_type),
             "url": str(item["url"]),
-            "snippet": str(item.get("snippet", "Analysis.")),
+            "snippet": str(item.get("snippet", "Cacao Suitability Change Analysis.")),
             "description": str(
-                item.get("description", "Metadata.")
+                item.get("description", "Metadata for Cacao Climate Suitability.")
             ),
-            "tags": "Example",
+            "tags": "Cacao, MaxEnt, Climate Suitability, RRGNBS",
             "serviceUsername": str(GP_USER),
             "servicePassword": str(GP_PASS),
         }

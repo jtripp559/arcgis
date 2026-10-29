@@ -1,7 +1,7 @@
 # GrantDBUserPrivileges.py
 #
 # Created By:	Julie Tripp
-#
+#				julie.tripp@rrgnbs.com
 # 				03/01/2024
 #
 # Description: 
@@ -54,15 +54,15 @@
 #
 # Example Input File:
 # 	dataset
-# 	ENT_DB3_dbadmin.DBO.COUNTIES
-# 	ENT_DB3_dbadmin.DBO.CITIES
-# 	ENT_DB3_dbadmin.DBO.STATES
+# 	RRG_TestEnterprise_rrggis.DBO.COUNTIES
+# 	RRG_TestEnterprise_rrggis.DBO.CITIES
+# 	RRG_TestEnterprise_rrggis.DBO.STATES
 #
 # Example Output File:
 # 	Dataset,Status
-# 	ENT_DB3_dbadmin.DBO.COUNTIES,Success
-# 	ENT_DB3_dbadmin.DBO.CITIES,Success
-# 	ENT_DB3_dbadmin.DBO.STATES,Success
+# 	RRG_TestEnterprise_rrggis.DBO.COUNTIES,Success
+# 	RRG_TestEnterprise_rrggis.DBO.CITIES,Success
+# 	RRG_TestEnterprise_rrggis.DBO.STATES,Success
 #
 #
 import arcpy
@@ -98,7 +98,7 @@ db_connection_file = input("Enter the path to the database connection file: ")
 if not db_connection_file:
     print("Database connection file is required.")
     exit()
-#    db_connection_file = r"D:\GenericArcGISEnterpriseDir\ENT_DB3_dbadmin.sde"
+#    db_connection_file = r"T:\ArcGISDataset\Enterprise\RRG_TestEnterprise_rrggis.sde"
 
 try:
     # Set the workspace to your enterprise geodatabase connection

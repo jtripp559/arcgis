@@ -2,6 +2,7 @@
 TimeEnabledRastersToCRF.py
 
 Developed by: Julie Tripp
+              julie.tripp@rrgnbs.com
 Date:  11/19/2024
 
 Description:
@@ -56,54 +57,54 @@ import traceback
 # Variables
 
 # NOTE: if the workspace is not set, a new File Geodatabase will be created in the Output directory
-arcpy.env.workspace = r"D:\GenericArcGISConnectionsDir\ORG_DB5_sde.sde"
+arcpy.env.workspace = r"T:\ArcGISDataset\Enterprise\Connections\NBS_WS_sde.sde"
 # NOTE: if crf_output_dir is not set, the CRF files will be saved in the Output directory
-crf_output_dir = r"D:\GenericTool1Dir\CRFS"
+crf_output_dir = r"T:\ArcGISDataset\Rasters\GlobalProspector\FarmTool\CRFS"
 
 # NOTE: raster_input_path below, could be list of specific rasters not just an entire folder
-# e.g. raster_input_path = r"D:\GenericTool1Dir\ETAW\Annual\ETAW_mm_2002.tif;D:\GenericTool1Dir\ETAW\Annual\ETAW_mm_2003.tif"
+# e.g. raster_input_path = r"T:\ArcGISDataset\Rasters\GlobalProspector\FarmTool\ETAW\Annual\ETAW_mm_2002.tif;T:\ArcGISDataset\Rasters\GlobalProspector\FarmTool\ETAW\Annual\ETAW_mm_2003.tif"
 datasets = [
     {
         "mosaicdataset_name": "DeepPerc_AW_SW_Annual",
         "variable_field_value": "'Deep Percolation of AW SW'",
         "variable_field_description": "'Deep Percolation of AW SW'",
         "variable_field_units": "'mm'",
-        "raster_input_path": r"D:\GenericTool1Dir\Deep_AW_SW\Annual"
+        "raster_input_path": r"T:\ArcGISDataset\Rasters\GlobalProspector\FarmTool\Deep_AW_SW\Annual"
     },
     {
         "mosaicdataset_name": "Pe_Annual",
         "variable_field_value": "'Effective Precipitation (Pe)'",
         "variable_field_description": "'Effective Precipitation (Pe)'",
         "variable_field_units": "'mm'",
-        "raster_input_path": r"D:\GenericTool1Dir\Pe\Annual"
+        "raster_input_path": r"T:\ArcGISDataset\Rasters\GlobalProspector\FarmTool\Pe\Annual"
     },
     {
         "mosaicdataset_name": "ETAW_Annual",
         "variable_field_value": "'ET of Applied Water'",
         "variable_field_description": "'Evapotranspiration of Actual Water'",
         "variable_field_units": "'mm'",
-        "raster_input_path": r"D:\GenericTool1Dir\ETAW\Annual"
+        "raster_input_path": r"T:\ArcGISDataset\Rasters\GlobalProspector\FarmTool\ETAW\Annual"
     },
     {
         "mosaicdataset_name": "Pe_Monthly",
         "variable_field_value": "'Effective Precipitation (Pe)'",
         "variable_field_description": "'Effective Precipitation (Pe)'",
         "variable_field_units": "'mm'",
-        "raster_input_path": r"D:\GenericTool1Dir\Pe\Monthly"
+        "raster_input_path": r"T:\ArcGISDataset\Rasters\GlobalProspector\FarmTool\Pe\Monthly"
     },
     {
         "mosaicdataset_name": "DeepPerc_AW_SW_Monthly",
         "variable_field_value": "'Deep Percolation of AW SW'",
         "variable_field_description": "'Deep Percolation of AW SW'",
         "variable_field_units": "'mm'",
-        "raster_input_path": r"D:\GenericTool1Dir\Deep_AW_SW\Monthly"
+        "raster_input_path": r"T:\ArcGISDataset\Rasters\GlobalProspector\FarmTool\Deep_AW_SW\Monthly"
     },
     {
         "mosaicdataset_name": "ETAW_Monthly",
         "variable_field_value": "'ET of Applied Water'",
         "variable_field_description": "'Evapotranspiration of Actual Water'",
         "variable_field_units": "'mm'",
-        "raster_input_path": r"D:\GenericTool1Dir\ETAW\Monthly"
+        "raster_input_path": r"T:\ArcGISDataset\Rasters\GlobalProspector\FarmTool\ETAW\Monthly"
     }
 ]
 
@@ -422,7 +423,7 @@ for idx, dataset in enumerate(datasets, start=1):
         log_message(f"Pixel Type: {pixel_type}")
         pixel_type_description = pixel_types.get(pixel_type, "32_BIT_FLOAT")
     except Exception as e:
-        log_message(f"Failed to get Pixel Type of Mosaic Dataset: {sde_mosaicdataset} — defaulting to 32_BIT_FLOAT", 'error')
+        log_message(f"Failed to get Pixel Type of Mosaic Dataset: {sde_mosaicdataset} - defaulting to 32_BIT_FLOAT", 'error')
         log_message(e, 'error')
         pixel_type_description = "32_BIT_FLOAT"
 
@@ -452,7 +453,7 @@ for idx, dataset in enumerate(datasets, start=1):
         failed_count += 1
         continue
 
-    # CRF is already valid at this point — pyramid/stats failures are logged
+    # CRF is already valid at this point - pyramid/stats failures are logged
     # as warnings but don't flip the dataset to "failed" in the summary.
     try:
         log_message(f"Building pyramids for {mosaicdataset_name}")

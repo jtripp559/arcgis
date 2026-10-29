@@ -11,9 +11,9 @@ from arcgis.raster._layer import ImageryLayerCacheManager
 from arcgis.mapping._types import MapImageLayerManager
 from arcgis.gis.server.admin._services import Service as AdminService
 
-rest_url = "https://gis.example.com/arcgisserver/rest/services/"
-portal_url = "https://gis.example.com/arcgisportal"
-portal_username = "gisadmin"
+rest_url = "https://maps.rrgnbs.com/arcgisserver/rest/services/"
+portal_url = "https://maps.rrgnbs.com/arcgisportal"
+portal_username = "rrgadmin"
 
 output_dir = os.path.dirname(os.path.abspath(__file__))
 output_dir = os.path.join(output_dir, 'output')
@@ -242,6 +242,8 @@ def get_services_info():
                 svc_properties = svc.properties
                 service_name = svc_properties.serviceName
                 service_type = svc_properties.type
+                # if service_name != 'Cacao_Cocoa_2030_Suitability_Regions_in_Central_America':
+                # continue
                 
                 log_message(f"Service: {service_name} ({service_type})") #, 'info')
                 
@@ -380,9 +382,9 @@ if __name__ == '__main__':
     # log beginning of script
     log_message("Starting script")
     
-    rest_url = get_user_input("Enter the ArcGIS REST API URL", "https://gis.example.com/arcgisserver/rest/services/")
-    portal_url = get_user_input("Enter the portal URL", "https://gis.example.com/arcgisportal")
-    portal_username = get_user_input("ArcGIS Portal Username (not SSO)", default_value='gisadmin')
+    rest_url = get_user_input("Enter the ArcGIS REST API URL", "https://maps.rrgnbs.com/arcgisserver/rest/services/")
+    portal_url = get_user_input("Enter the portal URL", "https://maps.rrgnbs.com/arcgisportal")
+    portal_username = get_user_input("ArcGIS Portal Username (not SSO)", default_value='rrgadmin')
     portal_password = getpass(f"**  ArcGIS Portal Password for {portal_username}: ")
     if portal_username == "" or portal_password == "":
         log_message("Username and password are required.", 'error')

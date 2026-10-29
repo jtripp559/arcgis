@@ -1,4 +1,4 @@
-USE [ORG_WS]
+USE [NBS_WS]
 GO
 
 CREATE ROLE [data creator]

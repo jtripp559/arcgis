@@ -26,7 +26,7 @@ import datetime
 # -----------------------------------------------------------------------
 # Configuration
 # -----------------------------------------------------------------------
-sde_conn = r"D:\GenericArcGISConnectionsDir\ORG_Generic_sde.sde"
+sde_conn = r"T:\ArcGISDataset\Enterprise\Connections\NBS_WaterBalance_sde.sde"
 
 # Cell size in degrees (WGS 84). Matches existing rasters (e.g., ETAW_mm)
 # 0.00833333 deg ~ 1 km (30 arc-seconds) at equator.
@@ -35,12 +35,12 @@ cell_size = 0.00833333376793981
 datasets = [
     {
         "feature_class": "sde.GROUNDWATER_OVER_UNDER_BASINATLAS_BERGHUIJS",
-        "output_dir": r"D:\GenericArcGISDataDir\OutputDir1\Generic\GW_OverUnder_Berghuijs\Annual",
+        "output_dir": r"T:\ArcGISDataset\Rasters\GlobalProspector\WaterBalance\GW_OverUnder_Berghuijs\Annual",
         "output_prefix": "GW_OverUnder_Berghuijs",
     },
     {
         "feature_class": "sde.GROUNDWATER_OVER_UNDER_BASINATLAS_PCR_GLOBWB2",
-        "output_dir": r"D:\GenericArcGISDataDir\OutputDir1\Generic\GW_OverUnder_PCR_GLOBWB2\Annual",
+        "output_dir": r"T:\ArcGISDataset\Rasters\GlobalProspector\WaterBalance\GW_OverUnder_PCR_GLOBWB2\Annual",
         "output_prefix": "GW_OverUnder_PCR_GLOBWB2",
     },
 ]
@@ -92,12 +92,12 @@ arcpy.env.outputCoordinateSystem = arcpy.SpatialReference(4326)
 arcpy.env.extent = arcpy.Extent(-180, -55.9875000004, 180.0006429038, 83.6256427763)
 
 # Use T: drive for scratch to avoid filling C: drive
-arcpy.env.scratchWorkspace = r"D:\GenericArcGISDataDir\Scratch"
+arcpy.env.scratchWorkspace = r"T:\ArcGISDataset\Scratch"
 
 # Prevent arcpy from cancelling long-running geoprocessing over SDE
 arcpy.env.autoCancelling = False
 
-# Overwrite disabled — we use skip logic for existing files instead
+# Overwrite disabled - we use skip logic for existing files instead
 arcpy.env.overwriteOutput = False
 
 # -----------------------------------------------------------------------
@@ -275,13 +275,13 @@ log_message(f"Log saved to: {log_file_path}")
 #       "variable_field_value": "'Total Unexploited / Overdrafted Groundwater (Berghuijs)'",
 #       "variable_field_description": "'Total Unexploited / Overdrafted Groundwater (Berghuijs)'",
 #       "variable_field_units": "'mm'",
-#       "raster_input_path": r"D:\GenericArcGISDataDir\OutputDir1\Generic\GW_OverUnder_Berghuijs\Annual"
+#       "raster_input_path": r"T:\ArcGISDataset\Rasters\GlobalProspector\WaterBalance\GW_OverUnder_Berghuijs\Annual"
 #   },
 #   {
 #       "mosaicdataset_name": "GW_OverUnder_PCR_GLOBWB2_Annual",
 #       "variable_field_value": "'Total Unexploited / Overdrafted Groundwater (PCR-GLOBWB2)'",
 #       "variable_field_description": "'Total Unexploited / Overdrafted Groundwater (PCR-GLOBWB2)'",
 #       "variable_field_units": "'mm'",
-#       "raster_input_path": r"D:\GenericArcGISDataDir\OutputDir1\Generic\GW_OverUnder_PCR_GLOBWB2\Annual"
+#       "raster_input_path": r"T:\ArcGISDataset\Rasters\GlobalProspector\WaterBalance\GW_OverUnder_PCR_GLOBWB2\Annual"
 #   },
 # -----------------------------------------------------------------------

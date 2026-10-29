@@ -14,7 +14,7 @@ def parse_xml_field(field_value):
         return field_value
 
 # Load the JSON file
-with open('Output\ENT_DB3_GDB_ITEMS.json') as f:
+with open('Output\RRG_TestEnterprise_GDB_ITEMS.json') as f:
     data = json.load(f)
     
 xml_fields = ['Definition', 'Documentation', 'ItemInfo', 'ChildRelationships', 'ParentRelationships']
@@ -31,7 +31,7 @@ for item in data:
     updated_data.append(item)
 
 # Write the updated data back to a JSON file
-with open('Output\ENT_DB3_GDB_ITEMS_parsed.json', 'w') as f:
+with open('Output\RRG_TestEnterprise_GDB_ITEMS_parsed.json', 'w') as f:
     json.dump(updated_data, f, indent=4)
 
 print('Done!')

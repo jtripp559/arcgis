@@ -1,7 +1,7 @@
 # MonitorArcGISEnterpriseLogs.py
 #
 # Developer:    Julie Tripp
-#
+#               julie.tripp@rrgnbs.com
 # Date: 06/11/2024
 #
 # Description:  This script connects to an ArcGIS Enterprise instance and retrieves the logs from the Portal and Server.
@@ -13,7 +13,7 @@
 # Sample env file:
 # PORTAL_URL=https://<portal>.com/portal
 # PORTAL_USERNAME=<username>
-# ORG_ARCGIS_MS_CREDS_NAME=<credential name>
+# NBS_ARCGIS_MS_CREDS_NAME=<credential name>
 # ARCGIS_LOG_REPORT_LEVEL=SEVERE
 # ARCGIS_LOG_REPORT_AGING_MINUTES=5
 #
@@ -45,7 +45,7 @@ from xml.etree import ElementTree as ET
 from dateutil.parser import parse
 import csv
 
-mods = [r'D:\GenericScriptsDir\send_email_using_powerautomate']
+mods = [r'T:\ArcGISDataset\Data Science Scripts\Source Controlled\gis_general\Scripts\ArcGIS Admin\send_email_using_powerautomate']
 for path in mods:
     sys.path.append(path)
 # Import send_email_using_powerautomate module with reload capability
@@ -94,10 +94,10 @@ load_dotenv()
 # arcgis_server_manager_url = os.getenv('ARCGIS_SERVER_MANAGER_URL')
 ARCGIS_URL = os.getenv('PORTAL_URL')
 USERNAME = os.getenv('PORTAL_USERNAME')
-MS_CRED_NAME = os.getenv('ORG_ARCGIS_MS_CREDS_NAME')
+MS_CRED_NAME = os.getenv('NBS_ARCGIS_MS_CREDS_NAME')
 ARCGIS_LOG_LEVEL = os.getenv('ARCGIS_LOG_REPORT_LEVEL', 'SEVERE')
 AGING_MINUTES_ENV = int(os.getenv('ARCGIS_LOG_REPORT_AGING_MINUTES', '5'))
-file_directory = r'C:\MS\OneDrive - Example Organization, Inc\SharePoint - ORG - GIS and IT\Programming\Monitoring\ORG ArcGIS Server Logs'
+file_directory = r'C:\MS\OneDrive - RRG Nature Based Solutions, Inc\SharePoint - NBS - GIS and IT\Programming\Monitoring\NBS ArcGIS Server Logs'
 if not os.path.exists(file_directory):
     # if file_directory does not exist, use the Output subfolder in the script folder
     file_directory = OUTPUT_DIR
@@ -170,7 +170,7 @@ def getToken(): #serverName, serverPort):
         
         # Connect to URL and post parameters
         # httpConn = httplib.HTTPConnection(serverName, serverPort)
-        httpConn = httplib.HTTPSConnection("gis.example.com")
+        httpConn = httplib.HTTPSConnection("maps.rrgnbs.com")
         httpConn.request("POST", tokenURL, params, headers)
         
         # Read response
@@ -305,13 +305,13 @@ def get_logs_from_admin():
     '''
     # Connect to URL and post parameters    
     # httpConn = httplib.HTTPConnection(serverName, serverPort)
-    httpConn = httplib.HTTPConnection("gis.example.com")
+    httpConn = httplib.HTTPConnection("maps.rrgnbs.com")
     httpConn.request("GET", logQueryURL, params, headers)
     response = httpConn.getresponse()
     response_status = response.status
     '''
     
-    logQueryURL = "https://gis.example.com" + logQueryURL
+    logQueryURL = "https://maps.rrgnbs.com" + logQueryURL
     response = requests.get(logQueryURL, headers=headers, params=params)
     response_status = response.status_code
     
@@ -672,7 +672,7 @@ def get_logs_from_server():
 def get_logs_from_log_file(log_folder, log_file_type):
     global LOGMESSAGES_DF, EXCEPTION_MESSAGE
     try:
-        # server_log_folder = r'\\org-app2\c$\arcgisserver\logs\ORG-APP2.ORG.CIO\server'
+        # server_log_folder = r'\\nbs-app2\c$\arcgisserver\logs\NBS-APP2.NBS.CIO\server'
         # check if folder exists
         if os.path.exists(log_folder):
             log_params = {'log_folder': log_folder, 'log_file_type': log_file_type}
@@ -777,9 +777,9 @@ if EXCEPTION_MESSAGE == '':
         logging.info('Fetching logs from Admin...')
         get_logs_from_admin()
     logging.info('Fetching logs from log files...')
-    get_logs_from_log_file(r'\\org-app2\c$\arcgisserver\logs\ORG-APP2.ORG.CIO\server', 'server')
-    get_logs_from_log_file(r'\\org-app2\c$\arcgisdatastore\logs\ORG-APP2.ORG.CIO\server', 'datastore')
-    get_logs_from_log_file(r'\\org-app3\c$\arcgisportal\logs\ORG-APP3.ORG.CIO\portal', 'portal')
+    get_logs_from_log_file(r'\\nbs-app2\c$\arcgisserver\logs\NBS-APP2.NBS.CIO\server', 'server')
+    get_logs_from_log_file(r'\\nbs-app2\c$\arcgisdatastore\logs\NBS-APP2.NBS.CIO\server', 'datastore')
+    get_logs_from_log_file(r'\\nbs-app3\c$\arcgisportal\logs\NBS-APP3.NBS.CIO\portal', 'portal')
 
 # pprint(LOGMESSAGES_DF)
 try:
@@ -805,8 +805,9 @@ if 'code' in LOGMESSAGES_DF.columns:
     # remove excluded codes from LOGMESSAGES_DF
     LOGMESSAGES_DF = LOGMESSAGES_DF[~LOGMESSAGES_DF['code'].astype(int).isin(EXCLUDED_CODES)]
 
-# remove records with SpecificToolName.GPServer in the message
-LOGMESSAGES_DF = LOGMESSAGES_DF[~LOGMESSAGES_DF['message'].str.contains('SpecificToolName.GPServer')]
+# remove records with waterBalanceWidget.GPServer in the message
+#       This service was deleted by Samantha in 2024, but something is still trying to access it and causing errors
+LOGMESSAGES_DF = LOGMESSAGES_DF[~LOGMESSAGES_DF['message'].str.contains('waterBalanceWidget.GPServer')]
 
 if LOGMESSAGES_DF is not None and not LOGMESSAGES_DF.empty:
     # add a newline to the beginning of each message so it will display on a new line

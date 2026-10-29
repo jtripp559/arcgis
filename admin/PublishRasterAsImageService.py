@@ -1,7 +1,7 @@
 # PublishRasterAsImageService.py
 #
 # Developed by: Julie Tripp
-#
+#               julie.tripp@rrgnbs.com
 # Date:  06/05/2024
 #
 # NOTE: sddraft files created from sharing in ArcGIS Pro can be found here:
@@ -39,19 +39,19 @@
 #
 # User Prompts (if empty/missing from .env file or command line argument):
 # 1. Repository ID: 
-#   - Find the RepositoryID in the manifest.xml of a service manually published to Portal from Pro for the same connection. See \\org-app2\c$\arcgisserver\directories\arcgissystem\arcgisinput.
+#   - Find the RepositoryID in the manifest.xml of a service manually published to Portal from Pro for the same connection. See \\nbs-app2\c$\arcgisserver\directories\arcgissystem\arcgisinput.
 # 2. ArcPy Environment Prompts:
 #   - Workspace type (Options: FileGDB or SDE) - Default to SDE
-#   - Full path to the workspace (e.g. D:\GenericArcGISConnectionsDir\ORG_DB5_sde.sde)
-#   - Name for the database in Server Manager (e.g. sde.DEFAULT (ORG-APP1), GenericProj1_Datastore.gdb, dbo.DEFAULT (ORG-APP1)
+#   - Full path to the workspace (e.g. T:\ArcGISDataset\Enterprise\Connections\NBS_WS_sde.sde)
+#   - Name for the database in Server Manager (e.g. sde.DEFAULT (NBS-APP1), Beisa_Datastore.gdb, dbo.DEFAULT (NBS-APP1)
 #       - TIP: This is the name that will be displayed when you click on the "service" icon.
 #               If you're not sure what this should be, but you know of another service that you published from Pro directly, 
 #               then you can find it in the SVCManifest > Databases > SVCDatabase > Name tag of the manifest.xml file in the
-#               extracted directory of the \\org-app2\c$\arcgisserver\directories\arcgissystem\arcgisinput directory for that service.
-#           E.g. \\org-app2\c$\arcgisserver\directories\arcgissystem\arcgisinput\AnnualDepthToGroundwater_BasinATLAS_lev09.MapServer\extracted\
+#               extracted directory of the \\nbs-app2\c$\arcgisserver\directories\arcgissystem\arcgisinput directory for that service.
+#           E.g. \\nbs-app2\c$\arcgisserver\directories\arcgissystem\arcgisinput\AnnualDepthToGroundwater_BasinATLAS_lev09.MapServer\extracted\
 # 3. Portal Connection Prompts:
-#   - Federated Server URL - Default to 'https://gis.example.com/arcgisserver'
-#   - Portal URL - Default to 'https://gis.example.com/arcgisportal'
+#   - Federated Server URL - Default to 'https://maps.rrgnbs.com/arcgisserver'
+#   - Portal URL - Default to 'https://maps.rrgnbs.com/arcgisportal'
 #   - Portal Username - Cannot be SSO enabled
 #   - Portal Password
 # 4. Raster Dataset Prompts:
@@ -60,9 +60,9 @@
 #     - If "N", name of the raster dataset(s) separated by commas (e.g. ActualEvapotranspiration2021_SSEBop, NDVI2021_SSEBop)
 #        - If no raster names entered, confirm to use all raster datasets in the workspace
 # 5. Database and Database Owner Name Prompts (conditional, if not a FileGDB workspace )
-#   - "Database Name (e.g. ORG-APP1):"
+#   - "Database Name (e.g. NBS-APP1):"
 #   - "Database Owner Name (e.g. dbo):"
-#   - Prepended to the raster dataset name to create the full dataset name (e.g. ORG-APP1.dbo.ActualEvapotranspiration2021_SSEBop)
+#   - Prepended to the raster dataset name to create the full dataset name (e.g. NBS-APP1.dbo.ActualEvapotranspiration2021_SSEBop)
 # 6. Shared Instance - Default to Y
 # 7. Portal and Server Folder Prompts (optional)
 # 8. Default Tags for all Rasters (optional)
@@ -145,9 +145,9 @@ portal_group_dict = {}
 # All of the following variables can be set in the .env file
 recycleStartHour = 20   # must be between 0 and 23
 recycleStartMin = 0 # must be a multiple of 15, up to 45
-federated_server_url = '' # "https://gis.example.com/arcgisserver"
-portal_url = '' # 'https://gis.example.com/arcgisportal'
-# server_connection_file_path = r"D:\GenericArcGISConnectionsDir\ORG_arcgisserver_server_connection.ags"
+federated_server_url = '' # "https://maps.rrgnbs.com/arcgisserver"
+portal_url = '' # 'https://maps.rrgnbs.com/arcgisportal'
+# server_connection_file_path = r"T:\ArcGISDataset\Enterprise\Connections\NBS_arcgisserver_server_connection.ags"
 portal_username = ''
 workspace_type = ""
 workspace_factory = ""
@@ -379,7 +379,7 @@ def get_all_json_data():
         else:
             # piece together all_json_data from the json files in the input directory
             query_results = {}
-            json_query_results_file_path = os.path.join(input_path, 'ENTImageLayers_all.json')
+            json_query_results_file_path = os.path.join(input_path, 'RRGImageLayers_all.json')
             with open(json_query_results_file_path, 'r') as f:
                 query_results_json = json.load(f)
             for query_results_record in query_results_json['results']:
@@ -390,7 +390,7 @@ def get_all_json_data():
                         key = url.lower()
                         query_results[key] = query_results_record
                 
-            json_file_path = os.path.join(input_path, 'ENTEnterprise_all_services_data.json')
+            json_file_path = os.path.join(input_path, 'RRGEnterprise_all_services_data.json')
             with open(json_file_path, 'r') as f:
                 data = json.load(f)
             for record in data['services']:
@@ -408,36 +408,36 @@ def get_all_json_data():
                     # store record in global dictionary with url as key
                     key = url
                 if key and key != '':
-                    record['org_results'] = query_results.get(url, {})
+                    record['nbs_results'] = query_results.get(url, {})
                     
                     # pull out relevant information from the record
                     # tags, summary, title, description
-                    if record['org_results'] != {}:
-                        tags = record['org_results'].get('tags', [])
-                        record['org_summary'] = record['org_results'].get('snippet', '')
-                        record['org_title'] = record['org_results'].get('title', '')
-                        record['org_description'] = record['org_results'].get('description', '')
+                    if record['nbs_results'] != {}:
+                        tags = record['nbs_results'].get('tags', [])
+                        record['nbs_summary'] = record['nbs_results'].get('snippet', '')
+                        record['nbs_title'] = record['nbs_results'].get('title', '')
+                        record['nbs_description'] = record['nbs_results'].get('description', '')
                     else:
                         if 'metadata' in record:
                             if 'dataIdInfo' in record['metadata']:
                                 if 'searchKeys' in record['metadata']['dataIdInfo']:
                                     tags = record['metadata']['dataIdInfo']['searchKeys'].get('keyword', [])
-                                    record['org_summary'] = record['metadata']['dataIdInfo'].get('idPurp', '')
+                                    record['nbs_summary'] = record['metadata']['dataIdInfo'].get('idPurp', '')
                                     if 'idCitation' in record['metadata']['dataIdInfo']:
                                         if 'resTitle' in record['metadata']['dataIdInfo']['idCitation']:
                                             if '#text' in record['metadata']['dataIdInfo']['idCitation']['resTitle']:
-                                                record['org_title'] = record['metadata']['dataIdInfo']['idCitation']['resTitle']['#text']
+                                                record['nbs_title'] = record['metadata']['dataIdInfo']['idCitation']['resTitle']['#text']
                                             else:
-                                                record['org_title'] = record['metadata']['dataIdInfo']['idCitation']['resTitle']
-                        record['org_description'] = ''
-                    if record.get('org_title', '') == '':
-                        record['org_title'] = key
-                    if record.get('org_summary', '') == '':
-                        record['org_summary'] = record['org_title']
-                    record['org_tags'] = ','.join(tags)
-                    record['org_dataLocation'] = record.get('metadata.linkage', '')
-                    record['org_dataFormat'] = record.get('metadata.distFormat', '')
-                    record['org_spatialReference'] = record.get('metadata.geogcsn', '')
+                                                record['nbs_title'] = record['metadata']['dataIdInfo']['idCitation']['resTitle']
+                        record['nbs_description'] = ''
+                    if record.get('nbs_title', '') == '':
+                        record['nbs_title'] = key
+                    if record.get('nbs_summary', '') == '':
+                        record['nbs_summary'] = record['nbs_title']
+                    record['nbs_tags'] = ','.join(tags)
+                    record['nbs_dataLocation'] = record.get('metadata.linkage', '')
+                    record['nbs_dataFormat'] = record.get('metadata.distFormat', '')
+                    record['nbs_spatialReference'] = record.get('metadata.geogcsn', '')
                     all_json_data[key] = record
             # export all_json_data to a json file
             with open(all_json_data_file_path, 'w') as f:
@@ -543,7 +543,7 @@ def add_key_value_element_under_nested_parent(doc, elementTagName, key, value, n
 def add_databases_to_sddraft_dom(doc, connectionString, datasetOnPremisePath):
     dataset_name = datasetOnPremisePath.split('.')[-1]
     
-    # prompt for DB Name for Server Manger e.g. sde.DEFAULT (ORG-APP1),  dbo.DEFAULT (ORG-APP1), GenericProj1_Datastore.gdb
+    # prompt for DB Name for Server Manger e.g. sde.DEFAULT (NBS-APP1),  dbo.DEFAULT (NBS-APP1), Beisa_Datastore.gdb
     
     databases_xml = f'''
     <Databases xsi:type='typens:ArrayOfSVCDatabase' xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance' xmlns:xs='http://www.w3.org/2001/XMLSchema' xmlns:typens='http://www.esri.com/schemas/ArcGIS/3.2.0'>
@@ -658,7 +658,7 @@ def update_sddraft_dom(sd_file_path, raster_name, title, description, credits=''
                 string_elements = element.getElementsByTagName('String')
                 for string_element in string_elements:
                     if string_element.firstChild:
-                        if string_element.firstChild.nodeValue != 'ENT_Enterprise':
+                        if string_element.firstChild.nodeValue != 'RRG_Enterprise':
                             string_element.firstChild.nodeValue = string_element.firstChild.nodeValue.replace("_", " ")
                 
     recycleInterval = '264'
@@ -848,7 +848,7 @@ def set_arcpy_environment():
     global workspace_type, workspace_factory, server_manager_db_name, workspace_full_path
     env_set = True
     
-    # prompt for DB Name for Server Manger e.g. sde.DEFAULT (ORG-APP1),  dbo.DEFAULT (ORG-APP1), GenericProj1_Datastore.gdb
+    # prompt for DB Name for Server Manger e.g. sde.DEFAULT (NBS-APP1),  dbo.DEFAULT (NBS-APP1), Beisa_Datastore.gdb
     
     # Ask the user if they are utlizing a FileGDB or SDE
     workspace_type = get_user_input("Workspace type (FileGDB or SDE)", default_value='SDE', value_to_check=workspace_type)
@@ -858,14 +858,14 @@ def set_arcpy_environment():
         env_set = False
     else:
         if workspace_type == 'FILEGDB':
-            example_workspace_path = r"\\org-app2\D$\GenericArcGISDataDir\GIS\Example\GenericProj2\GenericProj1\GenericProj1_Datastore.gdb"
+            example_workspace_path = r"\\nbs-app2\t$\ArcGISDataset\GIS\RRG - NBS\Elite Ag\Beisa\Beisa_Datastore.gdb"
             workspace_factory = 'esriDataSourcesGDB.FileGDBWorkspaceFactory'
-            # prompt for DB Name for Server Manger e.g. sde.DEFAULT (ORG-APP1),  dbo.DEFAULT (ORG-APP1), GenericProj1_Datastore.gdb
-            example_server_manager_db_name = 'GenericProj1_Datastore.gdb'
+            # prompt for DB Name for Server Manger e.g. sde.DEFAULT (NBS-APP1),  dbo.DEFAULT (NBS-APP1), Beisa_Datastore.gdb
+            example_server_manager_db_name = 'Beisa_Datastore.gdb'
         else:
-            example_workspace_path = r"D:\GenericArcGISConnectionsDir\ORG_DB5_sde.sde"
+            example_workspace_path = r"T:\ArcGISDataset\Enterprise\Connections\NBS_WS_sde.sde"
             workspace_factory = 'esriDataSourcesGDB.SdeWorkspaceFactory'
-            example_server_manager_db_name = 'sde.DEFAULT (ORG-APP1)'
+            example_server_manager_db_name = 'sde.DEFAULT (NBS-APP1)'
         
         workspace_full_path = get_user_input("Full path to the workspace", default_value=example_workspace_path, value_to_check=workspace_full_path)
         if workspace_full_path == "":
@@ -894,11 +894,11 @@ def connect_to_portal():
     global portal_url, gis, portal_username
     connected = False
     
-    # Get portal URL from the user or default to 'https://gis.example.com/arcgisportal'
-    portal_url = get_user_input("ArcGIS portal URL", default_value='https://gis.example.com/arcgisportal', value_to_check=portal_url)
+    # Get portal URL from the user or default to 'https://maps.rrgnbs.com/arcgisportal'
+    portal_url = get_user_input("ArcGIS portal URL", default_value='https://maps.rrgnbs.com/arcgisportal', value_to_check=portal_url)
     
     # Get portal_username and password from the user
-    portal_username = get_user_input("ArcGIS Portal Username (not SSO)", default_value='gisadmin', value_to_check=portal_username)
+    portal_username = get_user_input("ArcGIS Portal Username (not SSO)", default_value='rrgadmin', value_to_check=portal_username)
     portal_password = getpass.getpass(f"**  ArcGIS Portal Password for {portal_username}: ")
     if portal_username == "" or portal_password == "":
         log_message("Missing portal username or password.", 'error')
@@ -928,7 +928,7 @@ def format_raster_name(raster_name):
     else:
         if database_name == '':
             # get the database name from the user
-            database_name = get_user_input("Name of the database", default_value='ORG_WS', value_to_check=database_name)
+            database_name = get_user_input("Name of the database", default_value='NBS_WS', value_to_check=database_name)
             if database_name == "":
                 log_message("Missing database name.", 'error')
                 return raster_dataset
@@ -1212,7 +1212,7 @@ if repository_id != '':
     except:
         repository_id_error = True
 if repository_id_error:
-    log_message('\t*** Find the RepositoryID in the manifest.xml of a service manually published to Portal from Pro for the same connection. See \\org-app2\c$\arcgisserver\directories\arcgissystem\arcgisinput.')
+    log_message('\t*** Find the RepositoryID in the manifest.xml of a service manually published to Portal from Pro for the same connection. See \\nbs-app2\c$\arcgisserver\directories\arcgissystem\arcgisinput.')
     get_user_input('Press enter to quit...')
     if repository_id == '':
         log_message('\t*** RepositoryID is required.', 'error')
@@ -1225,8 +1225,8 @@ if not env_set:
     exit()
 
 if stageService:
-    # prompt to use https://gis.example.com/arcgisserver as the federated_server_url or input a different url
-    federated_server_url = get_user_input("Federated server URL", default_value='https://gis.example.com/arcgisserver', value_to_check=federated_server_url)
+    # prompt to use https://maps.rrgnbs.com/arcgisserver as the federated_server_url or input a different url
+    federated_server_url = get_user_input("Federated server URL", default_value='https://maps.rrgnbs.com/arcgisserver', value_to_check=federated_server_url)
     connected_to_portal = connect_to_portal()
     if not connected_to_portal:
         exit()
@@ -1249,8 +1249,8 @@ else:
         is_shared_instance = False
     
 # get portal and server folder names to publish to from the user
-arcgisPortalFolderName = get_user_input("ArcGIS Portal folder name, e.g. 'ENT_Enterprise' (or press enter to publish to root)", value_to_check=arcgisPortalFolderName)
-arcgisServerFolderName = get_user_input("ArcGIS Server folder name, e.g. 'ENT_Enterprise' (or press enter to publish to root)", value_to_check=arcgisServerFolderName)
+arcgisPortalFolderName = get_user_input("ArcGIS Portal folder name, e.g. 'RRG_Enterprise' (or press enter to publish to root)", value_to_check=arcgisPortalFolderName)
+arcgisServerFolderName = get_user_input("ArcGIS Server folder name, e.g. 'RRG_Enterprise' (or press enter to publish to root)", value_to_check=arcgisServerFolderName)
 
 default_empty_tags = "raster"
 default_tags = get_user_input("Tags to be appended to all rasters in this import, e.g. 'raster' (or press enter for none)", value_to_check=default_tags)
@@ -1258,13 +1258,13 @@ if default_tags != "":
     default_empty_tags = default_tags
     
 if raster_import_df.empty:
-    # JSON data to import will come from the ENTEnterprise_all_json_data.json file within the Input directory
+    # JSON data to import will come from the RRGEnterprise_all_json_data.json file within the Input directory
     # set the input_path to the Input directory within the script's directory
     input_path = current_dir
     # Create the Input directory if it does not exist
     if os.path.exists(os.path.join(current_dir, 'Input')):
         input_path = os.path.join(current_dir, 'Input')
-    all_json_data_file_path = os.path.join(input_path, 'ENTEnterprise_all_json_data.json')
+    all_json_data_file_path = os.path.join(input_path, 'RRGEnterprise_all_json_data.json')
 
 # cycle through all raster datasets in raster_datasets
 len_raster_datasets = len(raster_datasets)
@@ -1298,11 +1298,11 @@ for raster_dataset in raster_datasets:
         if raster_dataset_json:
             data_found = True
             raster_name = raster_dataset_json.get('name', raster_name)
-            title = raster_dataset_json.get('org_title', '')
-            summary = raster_dataset_json.get('org_summary', '')
-            description = raster_dataset_json.get('org_description', '')
-            tags = raster_dataset_json.get('org_tags', '')
-            spatialReference = raster_dataset_json.get('org_spatialReference', '')
+            title = raster_dataset_json.get('nbs_title', '')
+            summary = raster_dataset_json.get('nbs_summary', '')
+            description = raster_dataset_json.get('nbs_description', '')
+            tags = raster_dataset_json.get('nbs_tags', '')
+            spatialReference = raster_dataset_json.get('nbs_spatialReference', '')
         else:
             log_message('Summary set to raster name', 'info')
             summary = raster_name

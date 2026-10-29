@@ -1,4 +1,4 @@
-'Author: Julie Tripp
+'Author: Julie Tripp, julie.tripp@rrgnbs.com
 Version: 08/09/2024'
 
 # Scrip to run in the background in Linux:
@@ -14,6 +14,8 @@ library(exactextractr)
 shapefile_path <- "/home/jtripp/rasters/BasinATLAS_v10_lev09.shp"
 raster_path <- "/home/jtripp/rasters/pd_2020_1km_Aggregated.tif"
 output_csv_path <- "/home/jtripp/scripts/output/WorldPop_Density_1km2020_BasinATLAS.csv"
+# shapefile_path <- "//10.13.93.12/t$/ArcGISDataset/Rasters/GlobalProspector/Level9/BasinATLAS_v10_lev09.shp"
+# raster_path <- "//10.13.93.12/t$/ArcGISDataset/Rasters/WorldPop/1km/pd_2020_1km_Aggregated.tif"
 
 ## Load raster using terra
 print("Loading raster...")

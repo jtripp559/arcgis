@@ -1,7 +1,7 @@
 """
 ================================================================================
 Script Name : extract_featureLayer_metadata_from_ArcGIS_portal.py
-Description : Connects to the Example internal ArcGIS Enterprise Portal and
+Description : Connects to the RRG NBS internal ArcGIS Enterprise Portal and
               retrieves all Feature Serviceitems from a
               specified folder (It helped to set a folder in ArcGIS Portal).
               Outputs a Python list-of-dicts (layer_list)
@@ -13,7 +13,7 @@ Usage       : Run interactively in an ArcGIS Pro Python command or Jupyter Noteb
               Active Portal sign-in (GIS("pro")) is required.
 
 Inputs      : TARGET_FOLDER  - name of the Portal folder where features are located
-                               (Example here: "Example Place Name")
+                               (Example here: "RRGNBS Cacao Suitability")
 
 Outputs     : Printed Python list literal (layer_list) to stdout.
               Copy-paste output into script `publish_features_to_agol_bulk.py.py` as needed.
@@ -21,7 +21,7 @@ Outputs     : Printed Python list literal (layer_list) to stdout.
 Dependencies: arcgis (ArcGIS API for Python)
               Active ArcGIS Pro / Portal session
 
-Author:
+Author: guillermo.ponce@rrgnbs.com
 Created     : 2026-03-26
 Last Modified: 2026-03-27
 ================================================================================
@@ -32,7 +32,7 @@ from arcgis.gis import GIS
 # 1. Connect to  Internal Portal (set Portal as active portal in ArcGIS Pro session)
 gis_portal = GIS("pro")
 # This is the folder where all the features are located in ArcGIS Portal
-TARGET_FOLDER = "Example Place Name"
+TARGET_FOLDER = "RRGNBS Cacao Suitability"
 
 print("layer_list = [")
 

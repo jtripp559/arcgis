@@ -1,4 +1,4 @@
-# example: https://gis.example.com/arcgisserver/rest/services/WebTools/FarmGeneric/GPServer/Jobs/j17563ca436064fdb8aa965fdaf688039
+# example: https://maps.rrgnbs.com/arcgisserver/rest/services/WebTools/FarmWaterBalance/GPServer/Jobs/j17563ca436064fdb8aa965fdaf688039
 # test running from Pro, Python, Spyder, etc.
 
 import os
@@ -17,7 +17,7 @@ import re
 # from sqlalchemy import create_engine, inspect
 
 # Import send_email_using_powerautomate module with reload capability
-mods = [r'D:\GenericScriptsDir\send_email_using_powerautomate']
+mods = [r'T:\ArcGISDataset\Data Science Scripts\Source Controlled\gis_general\Scripts\ArcGIS Admin\send_email_using_powerautomate']
 for path in mods:
     sys.path.append(path)
 module_name = "send_email_using_powerautomate"
@@ -25,8 +25,8 @@ if module_name in sys.modules:
     del sys.modules[module_name]
 send_email_using_powerautomate = importlib.import_module(module_name)
 
-source_directory = r'\\org-app2\c$\arcgisserver\directories\arcgisjobs'
-output_directory = r'\\org-app2\D$\GenericArcGISDataDir\ArcGISServer\Tools\Outputs\Archive'
+source_directory = r'\\nbs-app2\c$\arcgisserver\directories\arcgisjobs'
+output_directory = r'\\nbs-app2\t$\ArcGISDataset\ArcGISServer\Tools\Outputs\Archive'
 
 # Get the current timestamp and format it as a string
 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -405,7 +405,7 @@ def search_for_excel_files():
                     jobID = get_base_name(parent_directory)
                     jobinfo['jobId'] = jobID
                     jobinfo['source_directory'] = parent_directory
-                    jobinfo['archive_directory'] = output_file_directory.replace('\\org-app2\D$', 'D:')
+                    jobinfo['archive_directory'] = output_file_directory.replace('\\nbs-app2\t$', 'T:')
                     jobinfo['archive_timestamp'] = timestamp
                     
                     # search the parent directory for relevant files

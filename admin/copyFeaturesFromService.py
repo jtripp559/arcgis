@@ -116,11 +116,67 @@ def get_token(agsServer=False, agolServer=False, baseURL='', tokenUrlPart='', us
             token = ''
     return token
 
+def _token_error_code(url):
+    """If a /query URL returns an ArcGIS error JSON, return its numeric code (498 = invalid token,
+    499 = token required, etc.); otherwise None. Used to decide whether a FeatureSet.load() failure is a
+    stale-token case worth refreshing + retrying, rather than a genuine (fatal) error."""
+    try:
+        data = requests.get(url).json()
+    except Exception:
+        return None
+    err = data.get('error') if isinstance(data, dict) else None
+    return err.get('code') if isinstance(err, dict) else None
+
+def _load_featureset(baseURL, where, fields, token, token_provider=None):
+    """Build the /query URL for one OID window, load it into a FeatureSet, and return (FeatureSet, token).
+
+    If the load fails because the token is invalid/expired (ArcGIS error 498/499) AND a token_provider
+    callable was supplied, mint a fresh token, rebuild the URL, and retry the load ONCE; the (possibly
+    refreshed) token is returned so the caller reuses it for the rest of the copy. Any other failure --
+    or a failed retry -- raises RuntimeError: the same error recurs for every remaining window, so the
+    caller must stop rather than grind through the rest of the OIDs and silently truncate the output."""
+    def _build(tok):
+        return baseURL + "?where={}&outFields={}&returnGeometry=true&f=json&token={}".format(where, fields, tok)
+
+    fsURL = _build(token)
+    log_message('Query URL: {}'.format(fsURL))
+    fs = arcpy.FeatureSet()
+    try:
+        fs.load(fsURL)
+        return fs, token
+    except Exception as e:
+        code = _token_error_code(fsURL)
+        # Stale/invalid token -> refresh once and retry THIS window before giving up.
+        if code in (498, 499) and token_provider is not None:
+            log_message('Token rejected (ArcGIS error {}) -- refreshing token and retrying this window '
+                        'once.'.format(code), level='warning')
+            new_token = None
+            try:
+                new_token = token_provider()
+            except Exception as te:
+                log_message('Token refresh failed: {}'.format(te), level='error')
+            if new_token:
+                fsURL = _build(new_token)
+                log_message('Retry Query URL: {}'.format(fsURL))
+                fs = arcpy.FeatureSet()
+                try:
+                    fs.load(fsURL)
+                    log_message('Token refreshed -- window loaded on retry.')
+                    return fs, new_token
+                except Exception as e2:
+                    log_message('Retry after token refresh still failed: {}'.format(e2), level='error')
+        # Not a token error, no provider, refresh yielded nothing, or the retry failed -> fatal.
+        log_message('Error loading features: {}.'.format(str(e)), level='error')
+        raise RuntimeError('Aborting copy -- could not load window ({}) from {}: {}'.format(where, baseURL, e))
+
 # Function to copy features from a map or feature service to a feature class
-def copyData(service, featureClass, token, maxRecordCount=1000, OIDFieldName=None, recordCount=None, maxOID=None, minOID=None):
+def copyData(service, featureClass, token, maxRecordCount=1000, OIDFieldName=None, recordCount=None, maxOID=None, minOID=None, token_provider=None):
     """ Function to copy features from a map or feature service to a feature class.
         service = the URL for the map/feature service. You must include the number at the end (/0).
         featureClass = the output location and name of the layer you are copying data to.
+        token_provider = optional zero-arg callable returning a FRESH token string. On a long paged copy
+            the token can expire mid-run; if a window load is rejected with ArcGIS error 498/499 this is
+            called to mint a new token and the window is retried once (see _load_featureset).
     """
     # Adapted by Julie Tripp from the ArcGIS Online Feature Service Extract Tool
     # https://community.esri.com/docs/DOC-6496-download-arcgis-online-feature-service-or-arcgis-server-featuremap-service
@@ -187,30 +243,11 @@ def copyData(service, featureClass, token, maxRecordCount=1000, OIDFieldName=Non
         if recordCount < maxRecordCount:
             x = maxOID
             y = minOID
-            where = OIDFieldName + '>' + str(y) + 'AND ' + OIDFieldName + '<=' + str(x)
+            where = OIDFieldName + '>' + str(y) + ' AND ' + OIDFieldName + '<=' + str(x)
             fields ='*'
 
-            query = "?where={}&outFields={}&returnGeometry=true&f=json&token={}".format(where, fields, token)
-            fsURL = baseURL + query
-            log_message('Query URL: {}'.format(fsURL))
-            
-            fs = arcpy.FeatureSet()
-
-            # load service
-            try:
-                fs.load(fsURL)
-            except EnvironmentError as e:
-                tbE = sys.exc_info()[2]
-                # Write the line number the error occured to the log file
-                logMsg = 'Failed at Line %i \n' % tbE.tb_lineno
-                logMsg += '\nError loading features: {}.'.format(str(e))
-                log_message(logMsg, level='error')
-            except Exception as e:
-                tbE = sys.exc_info()[2]
-                # Write the line number the error occured to the log file
-                logMsg = 'Failed at Line %i \n' % tbE.tb_lineno
-                logMsg += '\nError loading features: {}.'.format(str(e))
-                log_message(logMsg, level='error')
+            # Load the single window (refresh the token + retry once on a 498/499; otherwise fatal).
+            fs, token = _load_featureset(baseURL, where, fields, token, token_provider)
 
             # Copy features
             log_message('Copying features with ObjectIDs from {} to {} of {}'.format(str(y), str(x), str(recordCount)))
@@ -241,20 +278,24 @@ def copyData(service, featureClass, token, maxRecordCount=1000, OIDFieldName=Non
             y = minOID
             firstTime = 'True'
 
-            while y <= newIteration:
-                where = OIDFieldName + '>' + str(y) + 'AND ' + OIDFieldName + '<=' + str(x)
+            while y < maxOID:  # stop at the last real OID; avoids an empty trailing window (OID>maxOID)
+                where = OIDFieldName + '>' + str(y) + ' AND ' + OIDFieldName + '<=' + str(x)
                 fields ='*'
 
-                query = "?where={}&outFields={}&returnGeometry=true&f=json&token={}".format(where, fields, token)
-                fsURL = baseURL + query
-                log_message('Query URL: {}'.format(fsURL))
+                # Load this OID window. On an expired/invalid token (ArcGIS error 498/499) the token is
+                # refreshed via token_provider and the window is retried ONCE; the refreshed token is reused
+                # for the rest of the loop. Any other load failure -- or a failed retry -- is FATAL (it
+                # recurs for every remaining window): _load_featureset raises, which propagates out of
+                # copyData -> the calling step exits non-zero -> the pipeline stops, instead of grinding
+                # through the rest of the OIDs and silently truncating the output.
+                fs, token = _load_featureset(baseURL, where, fields, token, token_provider)
 
-                fs = arcpy.FeatureSet()
-
+                # A copy failure on ANY window is FATAL. Inner per-operation handlers used to swallow
+                # these, which is how a first-page failure (the target FC never got created) led to
+                # "Target Dataset ... does not exist" repeating on every later Append while the loop ran
+                # on. Letting the failure reach the single per-window handler below aborts immediately
+                # and propagates out of copyData -> the calling step exits non-zero -> the pipeline stops.
                 try:
-                    # load service
-                    fs.load(fsURL)
-
                     log_message('Copying features with ObjectIDs from {} to {} of {}'.format(str(y), str(x), str(recordCount)))
                     if firstTime == 'True':
                         if workspaceType == 'esriDataSourcesGDB.SdeWorkspaceFactory.1' or workspaceType == 'esriDataSourcesGDB.SdeWorkspaceFactory':
@@ -263,21 +304,7 @@ def copyData(service, featureClass, token, maxRecordCount=1000, OIDFieldName=Non
                         else:
                             featureClass2 = os.path.basename(featureClass)
                         log_message(f'Destination feature class: {featureClass2}')
-                        try:
-                            arcpy.FeatureClassToFeatureClass_conversion(fs, os.path.dirname(featureClass), featureClass2)
-                        except EnvironmentError as e:
-                            tbE = sys.exc_info()[2]
-                            # Write the line number the error occured to the log file
-                            logMsg = 'Failed at Line %i \n' % tbE.tb_lineno
-                            logMsg += '\nError: {}'.format(str(e))
-                            log_message(logMsg, level='error')
-                        except Exception as e:
-                            tbE = sys.exc_info()[2]
-                            # Write the line number the error occured to the log file
-                            logMsg = 'Failed at Line %i \n' % tbE.tb_lineno
-                            logMsg += '\nError: {}'.format(str(e))
-                            log_message(logMsg, level='error')
-
+                        arcpy.FeatureClassToFeatureClass_conversion(fs, os.path.dirname(featureClass), featureClass2)
                         firstTime = 'False'
                     else:
                         if workspaceType == 'esriDataSourcesGDB.SdeWorkspaceFactory.1' or workspaceType == 'esriDataSourcesGDB.SdeWorkspaceFactory':
@@ -287,48 +314,18 @@ def copyData(service, featureClass, token, maxRecordCount=1000, OIDFieldName=Non
                                 fieldList = list(searchRow)
                                 insertRows.insertRow(fieldList)
                         elif workspaceType == '':
-                            try:
-                                arcpy.Append_management(fs, featureClass, "NO_TEST")
-                            except EnvironmentError as e:
-                                tbE = sys.exc_info()[2]
-                                # Write the line number the error occured to the log file
-                                logMsg = 'Failed at Line %i \n' % tbE.tb_lineno
-                                logMsg += '\nError: {}'.format(str(e))
-                                log_message(logMsg, level='error')
-                            except Exception as e:
-                                tbE = sys.exc_info()[2]
-                                # Write the line number the error occured to the log file
-                                logMsg = 'Failed at Line %i \n' % tbE.tb_lineno
-                                logMsg += '\nError: {}'.format(str(e))
-                                log_message(logMsg, level='error')
+                            arcpy.Append_management(fs, featureClass, "NO_TEST")
                         else:
-                            try:
-                                arcpy.Append_management(fs, featureClass)
-                            except EnvironmentError as e:
-                                tbE = sys.exc_info()[2]
-                                # Write the line number the error occured to the log file
-                                logMsg = 'Failed at Line %i \n' % tbE.tb_lineno
-                                logMsg += '\nError: {}'.format(str(e))
-                                log_message(logMsg, level='error')
-                            except Exception as e:
-                                tbE = sys.exc_info()[2]
-                                # Write the line number the error occured to the log file
-                                logMsg = 'Failed at Line %i \n' % tbE.tb_lineno
-                                logMsg += '\nError: {}'.format(str(e))
-                                log_message(logMsg, level='error')
+                            arcpy.Append_management(fs, featureClass)
 
-                except EnvironmentError as e:
-                    tbE = sys.exc_info()[2]
-                    # Write the line number the error occured to the log file
-                    logMsg = 'Failed at Line %i \n' % tbE.tb_lineno
-                    logMsg += '\nError: {}'.format(str(e))
-                    log_message(logMsg, level='error')
                 except Exception as e:
                     tbE = sys.exc_info()[2]
                     # Write the line number the error occured to the log file
                     logMsg = 'Failed at Line %i \n' % tbE.tb_lineno
                     logMsg += '\nError: {}'.format(str(e))
                     log_message(logMsg, level='error')
+                    raise RuntimeError('Aborting copy -- failed copying OID window ({} > {} AND {} <= {}) '
+                                       'to {}: {}'.format(OIDFieldName, y, OIDFieldName, x, featureClass, e))
                     
 
                 x += maxRecordCount
@@ -347,6 +344,9 @@ def copyData(service, featureClass, token, maxRecordCount=1000, OIDFieldName=Non
         logMsg = 'Failed at Line %i \n' % tbE.tb_lineno
         logMsg += '\nError: {}'.format(str(e))
         log_message(logMsg, level='error')
+        # Propagate: a copy that died must NOT look like success. Re-raising lets the calling step
+        # exit non-zero so run_migration_pipeline stops instead of advancing a half-copied item.
+        raise
 
     except Exception as e:
         tbE = sys.exc_info()[2]
@@ -354,5 +354,8 @@ def copyData(service, featureClass, token, maxRecordCount=1000, OIDFieldName=Non
         logMsg = 'Failed at Line %i \n' % tbE.tb_lineno
         logMsg += '\nError: {}'.format(str(e))
         log_message(logMsg, level='error')
+        # Propagate: a copy that died must NOT look like success. Re-raising lets the calling step
+        # exit non-zero so run_migration_pipeline stops instead of advancing a half-copied item.
+        raise
 
 # copyFeaturesFromService

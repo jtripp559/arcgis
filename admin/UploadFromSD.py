@@ -7,8 +7,8 @@ def connect_to_portal():
     global portal_url, gis, portal_username
     connected = False
     
-    portal_url = "https://gis.example.com/arcgisportal"
-    portal_username = "gisadmin"
+    portal_url = "https://maps.rrgnbs.com/arcgisportal"
+    portal_username = "rrgadmin"
     portal_password = getpass.getpass(f"**  ArcGIS Portal Password for {portal_username}: ")
     if portal_username == "" or portal_password == "":
         print("Missing portal username or password.")
@@ -29,8 +29,8 @@ def connect_to_portal():
 
 connected = connect_to_portal()
 if connected:
-    sd_output_filepath = r"D:\GenericArcGISDataDir\Generic Tool\ArcGIS Pro\GenericTool\Staging\Population_Density_BasinATLAS_Level9_sqkm_yr2020.sd"
-    federated_server_url = "https://gis.example.com/arcgisserver"
+    sd_output_filepath = r"T:\ArcGISDataset\Water Balance Tool\ArcGIS Pro\WaterBalanceTool\Staging\Population_Density_BasinATLAS_Level9_sqkm_yr2020.sd"
+    federated_server_url = "https://maps.rrgnbs.com/arcgisserver"
     try:
         print("Start Publishing")
         arcpy.UploadServiceDefinition_server(sd_output_filepath, federated_server_url)

@@ -1,4 +1,4 @@
-CREATE OR ALTER PROCEDURE [sde].[ORG_GrantPermissions]
+CREATE OR ALTER PROCEDURE [sde].[NBS_GrantPermissions]
 AS
 BEGIN
     DECLARE @TableName NVARCHAR(256);

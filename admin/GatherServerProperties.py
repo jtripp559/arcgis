@@ -5,7 +5,7 @@ import json
 # Connect to your ArcGIS Enterprise
 username = input("Enter admin username: ")
 password = getpass("Enter admin password: ")
-gis = GIS("https://gis.example.com/arcgisportal", username, password)
+gis = GIS("https://maps.rrgnbs.com/arcgisportal", username, password)
 # Get the servers
 servers = gis.admin.servers.list()
 # Define the file path

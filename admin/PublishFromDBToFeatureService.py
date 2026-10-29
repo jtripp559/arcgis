@@ -4,13 +4,13 @@
 # PublishFromDBToFeatureService.py
 #
 # Developed by: Julie Tripp
-#
+#               julie.tripp@rrgnbs.com
 # Date:  10/29/2024
 #
 # NOTE: sddraft files created from sharing in ArcGIS Pro can be found here:
 #       C:\Users\userName\AppData\Local\ESRI\ArcGISPro\Staging\SharingProcesses
 #
-# Description: This script publishes feature datasets as image services to an ArcGIS Enterprise portal.
+# Description: This script publishes feature datasets as map services with feature access to an ArcGIS Enterprise portal.
 #
 # Env File:
 #   The script can be run with an optional .env file in the same directory as the script with the following variables:
@@ -42,19 +42,19 @@
 #
 # User Prompts (if empty/missing from .env file or command line argument):
 # 1. Repository ID: 
-#   - Find the RepositoryID in the manifest.xml of a service manually published to Portal from Pro for the same connection. See \\org-app2\c$\arcgisserver\directories\arcgissystem\arcgisinput.
+#   - Find the RepositoryID in the manifest.xml of a service manually published to Portal from Pro for the same connection. See \\nbs-app2\c$\arcgisserver\directories\arcgissystem\arcgisinput.
 # 2. ArcPy Environment Prompts:
 #   - Workspace type (Options: FileGDB or SDE) - Default to SDE
-#   - Full path to the workspace (e.g. D:\GenericArcGISConnectionsDir\ORG_DB5_sde.sde)
-#   - Name for the database in Server Manager (e.g. sde.DEFAULT (ORG-APP1), GenericProj1_Datastore.gdb, dbo.DEFAULT (ORG-APP1)
+#   - Full path to the workspace (e.g. T:\ArcGISDataset\Enterprise\Connections\NBS_WS_sde.sde)
+#   - Name for the database in Server Manager (e.g. sde.DEFAULT (NBS-APP1), Beisa_Datastore.gdb, dbo.DEFAULT (NBS-APP1)
 #       - TIP: This is the name that will be displayed when you click on the "service" icon.
 #               If you're not sure what this should be, but you know of another service that you published from Pro directly, 
 #               then you can find it in the SVCManifest > Databases > SVCDatabase > Name tag of the manifest.xml file in the
-#               extracted directory of the \\org-app2\c$\arcgisserver\directories\arcgissystem\arcgisinput directory for that service.
-#           E.g. \\org-app2\c$\arcgisserver\directories\arcgissystem\arcgisinput\AnnualDepthToGroundwater_BasinATLAS_lev09.MapServer\extracted\
+#               extracted directory of the \\nbs-app2\c$\arcgisserver\directories\arcgissystem\arcgisinput directory for that service.
+#           E.g. \\nbs-app2\c$\arcgisserver\directories\arcgissystem\arcgisinput\AnnualDepthToGroundwater_BasinATLAS_lev09.MapServer\extracted\
 # 3. Portal Connection Prompts:
-#   - Federated Server URL - Default to 'https://gis.example.com/arcgisserver'
-#   - Portal URL - Default to 'https://gis.example.com/arcgisportal'
+#   - Federated Server URL - Default to 'https://maps.rrgnbs.com/arcgisserver'
+#   - Portal URL - Default to 'https://maps.rrgnbs.com/arcgisportal'
 #   - Portal Username - Cannot be SSO enabled
 #   - Portal Password
 # 4. feature Dataset Prompts:
@@ -63,9 +63,9 @@
 #     - If "N", name of the feature dataset(s) separated by commas (e.g. ActualEvapotranspiration2021_SSEBop, NDVI2021_SSEBop)
 #        - If no feature names entered, confirm to use all feature datasets in the workspace
 # 5. Database and Database Owner Name Prompts (conditional, if not a FileGDB workspace )
-#   - "Database Name (e.g. ORG-APP1):"
+#   - "Database Name (e.g. NBS-APP1):"
 #   - "Database Owner Name (e.g. dbo):"
-#   - Prepended to the feature dataset name to create the full dataset name (e.g. ORG-APP1.dbo.ActualEvapotranspiration2021_SSEBop)
+#   - Prepended to the feature dataset name to create the full dataset name (e.g. NBS-APP1.dbo.ActualEvapotranspiration2021_SSEBop)
 # 6. Shared Instance - Default to Y
 # 7. Portal and Server Folder Prompts (optional)
 # 8. Default Tags for all features (optional)
@@ -86,6 +86,7 @@
 #
 import arcpy
 import os
+import argparse
 import datetime
 import getpass
 import json
@@ -97,6 +98,8 @@ import pandas as pd
 from arcgis.gis import GIS
 import sys
 import chardet
+import traceback
+
 # # from arcgis.layers import Service
 # import xml.sax.saxutils as saxutils
 try:
@@ -125,9 +128,55 @@ else:
 
 # set the output_path to the Output directory within the script's directory
 current_dir = os.path.dirname(os.path.abspath(__file__))
+
+# Migration status ledger (shared helper lives in ArcGIS Admin\Migrate). The module owns the canonical
+# path + all writes (ledger_mod.set_state); we only pass a --ledger-path override (ledger_mod.set_ledger_path)
+# and call set_state. Best-effort: if it is not importable, publishing continues unaffected. Override the
+# path with env MIGRATION_LEDGER_PATH or the --ledger-path CLI arg.
+sys.path.insert(0, os.path.join(current_dir, "Migrate"))
+sys.path.insert(0, os.path.join(current_dir, "docs", "plan", "completed"))
+try:
+    import migration_status_ledger as ledger_mod
+except Exception as _ledger_imp_err:
+    ledger_mod = None
+# Folder map (shared helper in ArcGIS Admin\Migrate): maps each source AGOL owner-folder to its
+# Portal_Server_Folder (used here at publish for the server REST folder) and Portal_Owner_User_Folder
+# (used at the Phase 8 reassign). Best-effort -- if unavailable, the per-row/run-level folder values are
+# used as-is. Loaded once at startup. See Migrate\Input\Folder_Map.csv.
+try:
+    import folder_map as folder_map_mod
+    _folder_map = folder_map_mod.load_folder_map()
+except Exception as _fmap_imp_err:
+    folder_map_mod = None
+    _folder_map = {}
+# Master Phase-1 migration manifest (Migrate\Input\ItemsToMigratePhase1.csv): single source of truth for
+# each item's destination database / schema / SDE connection, keyed by AGOL Item ID. Best-effort -- when a
+# publish row carries an item_id, its workspace/db/schema are taken from here (CSV columns still override).
+try:
+    import items_manifest as items_manifest_mod
+    _items_manifest = items_manifest_mod.load_manifest()
+except Exception as _man_imp_err:
+    items_manifest_mod = None
+    _items_manifest = {}
+# Workflow credentials from the Windows Credential Manager (key 'portal' -> nbs_arcgis_admin), with an
+# interactive prompt fallback. Best-effort -- if not importable, connect_to_portal() prompts as before.
+try:
+    import credential_store
+except Exception as _cred_imp_err:
+    credential_store = None
+# Post-publish symbology (Step 6): apply the source AGOL item's renderer + pop-ups + visibility range +
+# default view to the new Enterprise item (and sync its Map Image Layer) in the SAME run. Best-effort --
+# if it is not importable, publishing continues unaffected.
+try:
+    from migration_poc_step6_apply_symbology import apply_symbology
+except Exception as _sym_imp_err:
+    apply_symbology = None
 output_path = os.path.join(current_dir, 'Output')
 if not os.path.exists(output_path):
     os.makedirs(output_path)
+# Directory the .sddraft / .sd / temp .aprx are written to. Defaults to output_path; override with
+# --sd-output-dir (e.g. a Staging folder on T:). Set here at module level so apply_cli_overrides can read it.
+sd_output_dir = output_path
 input_path = os.path.join(current_dir, 'Input')
 if not os.path.exists(input_path):
     os.makedirs(input_path)
@@ -135,6 +184,9 @@ project_template_path = os.path.join(input_path, "BlankTemplateProject", "BlankT
 if not os.path.exists(project_template_path):
     print(f"BlankTemplateProject.aprx not found in the BlankTemplateProject directory within : {input_path}")
     sys.exit()
+# The migration ledger path is owned by migration_status_ledger (canonical: ArcGIS Admin\Migrate\Output,
+# env MIGRATION_LEDGER_PATH overrides). A --ledger-path CLI arg is forwarded to ledger_mod.set_ledger_path()
+# in apply_cli_overrides(); this script no longer hardcodes a default path of its own.
 
 # Timestamp for unique naming
 timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
@@ -161,9 +213,9 @@ portal_group_dict = {}
 # All of the following variables can be set in the .env file
 recycleStartHour = 20   # must be between 0 and 23
 recycleStartMin = 0 # must be a multiple of 15, up to 45
-federated_server_url = '' # "https://gis.example.com/arcgisserver"
-portal_url = '' # 'https://gis.example.com/arcgisportal'
-# server_connection_file_path = r"D:\GenericArcGISConnectionsDir\ORG_arcgisserver_server_connection.ags"
+federated_server_url = '' # "https://maps.rrgnbs.com/arcgisserver"
+portal_url = '' # 'https://maps.rrgnbs.com/arcgisportal'
+# server_connection_file_path = r"T:\ArcGISDataset\Enterprise\Connections\NBS_arcgisserver_server_connection.ags"
 portal_username = ''
 workspace_type = ""
 workspace_factory = ""
@@ -179,8 +231,62 @@ csv_import_file_path = ''
 specific_features_to_import = ''
 default_tags = ''
 
+# Existing-service guard flags (set from the CLI via apply_cli_overrides). When a service of the same name
+# already exists on the federated server (BEFORE we create/publish a new one):
+#   override_existing      (--OverrideExisting)     -> overwrite/republish over the existing service.
+#   use_existing           (--UseExisting)          -> assume the existing same-name service is the intended
+#                                                      feature and use it (do NOT republish) when the same SDE
+#                                                      reference can't be auto-confirmed.
+#   create_new_if_existing (--CreateNewIfExisting)  -> leave the existing service alone and publish a NEW
+#                                                      service under the next free, suffix-incremented name
+#                                                      (e.g. <name>_2), still referencing OUR SDE feature
+#                                                      class. Use when the existing same-name service is a
+#                                                      DIFFERENT dataset and you want both to coexist.
+# An existing service that is auto-detected to reference the SAME SDE feature class by reference is ALWAYS
+# used as-is (not republished) regardless of these flags. If none of the flags is set and the same reference
+# can't be confirmed, the item is recorded as an error in the ledger and skipped.
+# Precedence when more than one is set: override_existing > use_existing > create_new_if_existing.
+override_existing = False
+use_existing = False
+create_new_if_existing = False
+
 # initilaize gis variable
 gis = None
+
+# The feature_name currently being published. Set at the top of each main-loop iteration so log_message()
+# can attribute any 'error'-level log to the right migration-ledger row (join on dest_feature_class). Blank
+# during setup/connect (before the loop) so those non-per-item errors are NOT recorded against any item.
+current_feature_name = ''
+# Reentrancy guard + per-run de-dupe so the auto-record-on-error in log_message neither loops nor appends
+# the same (feature, message) to a row's error column more than once.
+_recording_ledger_error = False
+_recorded_ledger_errors = set()
+
+def _record_error_to_ledger(message):
+    """Best-effort: when an 'error' is logged WHILE a specific feature is being published, append it to that
+    item's migration-status-ledger row (joined dest_feature_class == current_feature_name, resolved back to
+    the SOURCE item_id). This CENTRALIZES the 'on publish error, record against the source row' pattern so
+    individual error sites don't each need their own ledger_source_for_feature/record_error block. A row
+    that carries an error is then EXCLUDED from future publish CSVs (BuildPublishCSV skips errored rows) and
+    is not treated as publishable downstream -- so the failed item stops being retried every sweep. Skipped
+    when no feature is in flight (setup errors) or the ledger helper is unavailable; de-duped per run and
+    reentrancy-guarded; never raises (logging must not depend on the ledger)."""
+    global _recording_ledger_error
+    if ledger_mod is None or not current_feature_name or _recording_ledger_error:
+        return
+    key = (current_feature_name.lower(), str(message)[:300])
+    if key in _recorded_ledger_errors:
+        return
+    _recording_ledger_error = True
+    try:
+        src = ledger_source_for_feature(current_feature_name)
+        if src:
+            ledger_mod.record_error(src, str(message)[:300], phase="publish")
+            _recorded_ledger_errors.add(key)
+    except Exception:
+        pass   # never let ledger recording break logging
+    finally:
+        _recording_ledger_error = False
 
 def init_logging():
     global general_logger, error_logger
@@ -234,7 +340,10 @@ def log_by_type(message, log_level='info', tab_count=1):
                 if log_level == 'error':
                     error_logger.error(msg)
     except Exception as e:
-        log_message(f"Failed to log message by type: {e}", 'info')
+        try:
+            log_message(f"Failed to log message by type: {e}", 'info')
+        except Exception as inner_e:
+            print(f"Failed to log message by type: {inner_e}")
 
 def log_message(message, log_level='', message_details=None, reset_log_hist=False):
     if message == '':
@@ -258,6 +367,9 @@ def log_message(message, log_level='', message_details=None, reset_log_hist=Fals
     general_logger.info(message)
     if log_level == 'error':
         error_logger.error(message)
+        # Centralized ledger capture: record this error against the feature currently being published
+        # (best-effort, de-duped, reentrancy-guarded -- see _record_error_to_ledger).
+        _record_error_to_ledger(message)
     log_by_type(message_details, log_level)
 
 def init_global_variables():
@@ -339,7 +451,124 @@ def init_global_variables():
     else:
         log_message("dotenv module not available, skipping .env file loading", 'info')
     return has_env_file
-            
+
+def parse_cli_args():
+    # Optional command-line overrides. Precedence: CLI arg > .env value > interactive prompt.
+    # This lets the script publish from a specific schema/workspace WITHOUT editing the shared .env
+    # (e.g. the per-schema migration runs: RRGOrg_ws.sde/owner 'ws', then RRGOrg_crop.sde/owner 'crop').
+    # Any option omitted here falls back to the .env value, then to the interactive prompt as before.
+    parser = argparse.ArgumentParser(
+        description=("Publish referenced feature services from a database to ArcGIS Enterprise. "
+                     "Any option provided here OVERRIDES the matching .env value; anything omitted "
+                     "falls back to .env and then to an interactive prompt."))
+    parser.add_argument("csv", nargs="?", default=None,
+                        help="Path to the import CSV (columns: feature_name,title,summary,description,"
+                             "tags,credits[,instance,portal_groups,categories]). Overrides CSV_IMPORT_FILE_PATH.")
+    parser.add_argument("--workspace-full-path", "--workspace", dest="workspace_full_path", default=None,
+                        help="Full path to the SDE/FileGDB workspace. Overrides WORKSPACE_FULL_PATH.")
+    parser.add_argument("--workspace-type", dest="workspace_type", default=None,
+                        help="FILEGDB or SDE. Overrides WORKSPACE_TYPE_FILEGDB_OR_SDE.")
+    parser.add_argument("--database-name", dest="database_name", default=None,
+                        help="Database name (e.g. RRGOrg). Overrides DATABASE_NAME.")
+    parser.add_argument("--database-owner", "--owner", dest="database_owner_name", default=None,
+                        help="Database owner/schema (e.g. ws, crop). Overrides DATABASE_OWNER_NAME.")
+    parser.add_argument("--server-manager-db", dest="server_manager_db_name", default=None,
+                        help='Server Manager DB name (e.g. "sde.DEFAULT (NBS-APP1)"). '
+                             "Overrides ARCGIS_SERVER_MANAGER_DB_NAME.")
+    parser.add_argument("--repository-id", dest="repository_id", default=None,
+                        help="RepositoryID. Overrides REPOSITORY_ID.")
+    parser.add_argument("--portal-folder", dest="portal_folder", default=None,
+                        help="Portal item folder. Overrides ARCGIS_PORTAL_FOLDER_NAME.")
+    parser.add_argument("--server-folder", dest="server_folder", default=None,
+                        help="Server REST folder. Overrides ARCGIS_SERVER_FOLDER_NAME.")
+    parser.add_argument("--instance", dest="instance_type", default=None,
+                        help="shared or dedicated. Overrides INSTANCE_TYPE_SHARED_OR_DEDICATED.")
+    parser.add_argument("--default-tags", dest="default_tags", default=None,
+                        help="Tags appended to all datasets. Overrides DEFAULT_TAGS.")
+    parser.add_argument("--federated-server-url", dest="federated_server_url", default=None,
+                        help="Federated server URL. Overrides FEDERATED_SERVER_URL.")
+    parser.add_argument("--portal-url", dest="portal_url", default=None,
+                        help="Portal URL. Overrides PORTAL_URL.")
+    parser.add_argument("--portal-username", dest="portal_username", default=None,
+                        help="Portal username (not SSO). Overrides PORTAL_USERNAME.")
+    parser.add_argument("--ledger-path", dest="ledger_path", default=None,
+                        help="Migration status ledger CSV path. Overrides MIGRATION_LEDGER_PATH.")
+    parser.add_argument("--sd-output-dir", dest="sd_output_dir", default=None,
+                        help="Service definition (SD) output directory. Overrides SD_OUTPUT_DIR.")
+    # Existing-service handling (a service of the same name already on the federated server). Accept both
+    # the PascalCase spellings requested and lowercase-hyphen aliases.
+    parser.add_argument("--OverrideExisting", "--override-existing", dest="override_existing",
+                        action="store_true",
+                        help="If a service of the same name already exists, overwrite (republish over) it.")
+    parser.add_argument("--UseExisting", "--use-existing", dest="use_existing",
+                        action="store_true",
+                        help="If a service of the same name already exists and the SAME SDE reference cannot "
+                             "be auto-confirmed, assume the existing service is the intended feature and use "
+                             "it (do NOT republish). An existing service that DOES reference the same SDE "
+                             "feature class is always used as-is regardless of this flag.")
+    parser.add_argument("--CreateNewIfExisting", "--create-new-if-existing", "--create_new_if_existing",
+                        dest="create_new_if_existing", action="store_true",
+                        help="If a service of the same name already exists and the SAME SDE reference cannot "
+                             "be auto-confirmed, leave the existing service alone and publish a NEW service "
+                             "under the next free suffix-incremented name (e.g. <name>_2), still referencing "
+                             "OUR SDE feature class. Use when the existing same-name service is a DIFFERENT "
+                             "dataset and both should coexist. Lower precedence than --OverrideExisting and "
+                             "--UseExisting.")
+    # parse_known_args so stray/unexpected args never crash the publish run
+    args, unknown = parser.parse_known_args()
+    if unknown:
+        log_message(f"Ignoring unrecognized command-line arguments: {unknown}", 'info')
+    return args
+
+def apply_cli_overrides(args):
+    global csv_import_file_path, workspace_full_path, workspace_type, database_name, database_owner_name
+    global server_manager_db_name, repository_id, arcgisPortalFolderName, arcgisServerFolderName
+    global instance_type, default_tags, federated_server_url, portal_url, portal_username
+    global sd_output_dir, override_existing, use_existing, create_new_if_existing
+    if args is None:
+        return
+    def ov(new_value, current_value, label, transform=None):
+        if new_value is not None and str(new_value) != '':
+            if transform:
+                new_value = transform(new_value)
+            log_message(f"CLI override: {label} = {new_value}", 'info')
+            return new_value
+        return current_value
+    csv_import_file_path = ov(args.csv, csv_import_file_path, 'CSV_IMPORT_FILE_PATH')
+    workspace_full_path = ov(args.workspace_full_path, workspace_full_path, 'WORKSPACE_FULL_PATH')
+    workspace_type = ov(args.workspace_type, workspace_type, 'WORKSPACE_TYPE_FILEGDB_OR_SDE',
+                        transform=lambda v: v.upper())
+    database_name = ov(args.database_name, database_name, 'DATABASE_NAME')
+    database_owner_name = ov(args.database_owner_name, database_owner_name, 'DATABASE_OWNER_NAME')
+    server_manager_db_name = ov(args.server_manager_db_name, server_manager_db_name, 'ARCGIS_SERVER_MANAGER_DB_NAME')
+    repository_id = ov(args.repository_id, repository_id, 'REPOSITORY_ID')
+    arcgisPortalFolderName = ov(args.portal_folder, arcgisPortalFolderName, 'ARCGIS_PORTAL_FOLDER_NAME')
+    arcgisServerFolderName = ov(args.server_folder, arcgisServerFolderName, 'ARCGIS_SERVER_FOLDER_NAME')
+    instance_type = ov(args.instance_type, instance_type, 'INSTANCE_TYPE_SHARED_OR_DEDICATED',
+                       transform=lambda v: v.lower())
+    default_tags = ov(args.default_tags, default_tags, 'DEFAULT_TAGS')
+    federated_server_url = ov(args.federated_server_url, federated_server_url, 'FEDERATED_SERVER_URL')
+    portal_url = ov(args.portal_url, portal_url, 'PORTAL_URL')
+    portal_username = ov(args.portal_username, portal_username, 'PORTAL_USERNAME')
+    # Forward a --ledger-path override to the ledger module (it owns the canonical path otherwise).
+    if args.ledger_path and str(args.ledger_path) != '' and ledger_mod is not None:
+        log_message(f"CLI override: MIGRATION_LEDGER_PATH = {args.ledger_path}", 'info')
+        ledger_mod.set_ledger_path(args.ledger_path)
+    sd_output_dir = ov(args.sd_output_dir, sd_output_dir, 'SD_OUTPUT_DIR')
+    if not sd_output_dir:
+        sd_output_dir = output_path
+    if getattr(args, 'override_existing', False):
+        override_existing = True
+        log_message("CLI override: OverrideExisting = True (existing services will be overwritten)", 'info')
+    if getattr(args, 'use_existing', False):
+        use_existing = True
+        log_message("CLI override: UseExisting = True (an existing same-name service is assumed to be the "
+                    "intended feature)", 'info')
+    if getattr(args, 'create_new_if_existing', False):
+        create_new_if_existing = True
+        log_message("CLI override: CreateNewIfExisting = True (on a same-name clash, publish a new "
+                    "suffix-incremented service referencing our SDE feature class)", 'info')
+
 
 '''
 # Function to check if the workspace is registered with the server  # Not needed
@@ -398,7 +627,7 @@ def get_all_json_data():
         else:
             # piece together all_json_data from the json files in the input directory
             query_results = {}
-            json_query_results_file_path = os.path.join(input_path, 'ENTImageLayers_all.json')
+            json_query_results_file_path = os.path.join(input_path, 'RRGImageLayers_all.json')
             with open(json_query_results_file_path, 'r') as f:
                 query_results_json = json.load(f)
             for query_results_record in query_results_json['results']:
@@ -409,7 +638,7 @@ def get_all_json_data():
                         key = url.lower()
                         query_results[key] = query_results_record
                 
-            json_file_path = os.path.join(input_path, 'ENTEnterprise_all_services_data.json')
+            json_file_path = os.path.join(input_path, 'RRGEnterprise_all_services_data.json')
             with open(json_file_path, 'r') as f:
                 data = json.load(f)
             for record in data['services']:
@@ -427,36 +656,36 @@ def get_all_json_data():
                     # store record in global dictionary with url as key
                     key = url
                 if key and key != '':
-                    record['org_results'] = query_results.get(url, {})
+                    record['nbs_results'] = query_results.get(url, {})
                     
                     # pull out relevant information from the record
                     # tags, summary, title, description
-                    if record['org_results'] != {}:
-                        tags = record['org_results'].get('tags', [])
-                        record['org_summary'] = record['org_results'].get('snippet', '')
-                        record['org_title'] = record['org_results'].get('title', '')
-                        record['org_description'] = record['org_results'].get('description', '')
+                    if record['nbs_results'] != {}:
+                        tags = record['nbs_results'].get('tags', [])
+                        record['nbs_summary'] = record['nbs_results'].get('snippet', '')
+                        record['nbs_title'] = record['nbs_results'].get('title', '')
+                        record['nbs_description'] = record['nbs_results'].get('description', '')
                     else:
                         if 'metadata' in record:
                             if 'dataIdInfo' in record['metadata']:
                                 if 'searchKeys' in record['metadata']['dataIdInfo']:
                                     tags = record['metadata']['dataIdInfo']['searchKeys'].get('keyword', [])
-                                    record['org_summary'] = record['metadata']['dataIdInfo'].get('idPurp', '')
+                                    record['nbs_summary'] = record['metadata']['dataIdInfo'].get('idPurp', '')
                                     if 'idCitation' in record['metadata']['dataIdInfo']:
                                         if 'resTitle' in record['metadata']['dataIdInfo']['idCitation']:
                                             if '#text' in record['metadata']['dataIdInfo']['idCitation']['resTitle']:
-                                                record['org_title'] = record['metadata']['dataIdInfo']['idCitation']['resTitle']['#text']
+                                                record['nbs_title'] = record['metadata']['dataIdInfo']['idCitation']['resTitle']['#text']
                                             else:
-                                                record['org_title'] = record['metadata']['dataIdInfo']['idCitation']['resTitle']
-                        record['org_description'] = ''
-                    if record.get('org_title', '') == '':
-                        record['org_title'] = key
-                    if record.get('org_summary', '') == '':
-                        record['org_summary'] = record['org_title']
-                    record['org_tags'] = ','.join(tags)
-                    record['org_dataLocation'] = record.get('metadata.linkage', '')
-                    record['org_dataFormat'] = record.get('metadata.distFormat', '')
-                    record['org_spatialReference'] = record.get('metadata.geogcsn', '')
+                                                record['nbs_title'] = record['metadata']['dataIdInfo']['idCitation']['resTitle']
+                        record['nbs_description'] = ''
+                    if record.get('nbs_title', '') == '':
+                        record['nbs_title'] = key
+                    if record.get('nbs_summary', '') == '':
+                        record['nbs_summary'] = record['nbs_title']
+                    record['nbs_tags'] = ','.join(tags)
+                    record['nbs_dataLocation'] = record.get('metadata.linkage', '')
+                    record['nbs_dataFormat'] = record.get('metadata.distFormat', '')
+                    record['nbs_spatialReference'] = record.get('metadata.geogcsn', '')
                     all_json_data[key] = record
             # export all_json_data to a json file
             with open(all_json_data_file_path, 'w') as f:
@@ -538,6 +767,7 @@ def add_element_under_nested_parent(doc, elementTagName, value='', nestedParentP
             element.setAttribute(attr_name, attr_value)
     if parent_element:
         parent_element.appendChild(element)
+    log_message(f"Set value of element '{elementTagName}' to '{value}' under parent path '{' > '.join(nestedParentPath)}'", 'info')
 
 def add_key_value_element_under_nested_parent(doc, elementTagName, key, value, nestedParentPath=[], elementAttributes={}, keyAttributes={}):
     if elementTagName == '' or key == '' or value == '' or nestedParentPath == []:
@@ -558,11 +788,12 @@ def add_key_value_element_under_nested_parent(doc, elementTagName, key, value, n
         new_value.appendChild(new_value_text)
         new_element.appendChild(new_value)
         parent_element.appendChild(new_element)
-
+        log_message(f"Added key-value element '{elementTagName}' with key '{key}' and value '{value}' under parent path '{' > '.join(nestedParentPath)}'", 'info')
+        
 def add_databases_to_sddraft_dom(doc, connectionString, datasetOnPremisePath):
     dataset_name = datasetOnPremisePath.split('.')[-1]
     
-    # prompt for DB Name for Server Manger e.g. sde.DEFAULT (ORG-APP1),  dbo.DEFAULT (ORG-APP1), GenericProj1_Datastore.gdb
+    # prompt for DB Name for Server Manger e.g. sde.DEFAULT (NBS-APP1),  dbo.DEFAULT (NBS-APP1), Beisa_Datastore.gdb
     
     databases_xml = f'''
     <Databases xsi:type='typens:ArrayOfSVCDatabase' xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance' xmlns:xs='http://www.w3.org/2001/XMLSchema' xmlns:typens='http://www.esri.com/schemas/ArcGIS/3.2.0'>
@@ -641,11 +872,12 @@ def update_sddraft_dom(sd_file_path, feature_name, title, description, credits='
     #   FOR SHARED INSTANCES
     #   - Configurations.Definition.Props.PropertySetProperty.Key = 'MinInstances'       => Value = 0
     #   - Configurations.Definition.Props.PropertySetProperty.Key = 'MaxInstances'       => Value = 0
-    #   - Configurations.Definition.Props.PropertySetProperty.Key = 'provider'           => Value = 'ArcObjectsRasterRendering'
+    #   - Configurations.Definition.Props.PropertySetProperty.Key = 'provider'           => Value = 'DMaps'  (map/feature shared pool; NOT the raster 'ArcObjectsRasterRendering')
     #   FOR DEDICATED INSTANCES
     #   - Configurations.Definition.Props.PropertySetProperty.Key = 'MinInstances'       => Value = # Minimum number of instances of the service
     #   - Configurations.Definition.Props.PropertySetProperty.Key = 'MaxInstances'       => Value = # Maximum number of instances of the service
     #   - Configurations.Definition.Props.PropertySetProperty.Key = 'provider'           => Value = 'ArcObjects11'
+    # See https://developers.arcgis.com/rest/enterprise-administration/enterprise/deployment-default-properties/
     
     log_message(f"Updating sddraft DOM at '{sd_file_path}'", 'info')
     
@@ -678,7 +910,7 @@ def update_sddraft_dom(sd_file_path, feature_name, title, description, credits='
                     string_elements = element.getElementsByTagName('String')
                     for string_element in string_elements:
                         if string_element.firstChild:
-                            if string_element.firstChild.nodeValue != 'ENT_Enterprise':
+                            if string_element.firstChild.nodeValue != 'RRG_Enterprise':
                                 string_element.firstChild.nodeValue = string_element.firstChild.nodeValue.replace("_", " ")
                     
         recycleInterval = '264'
@@ -691,7 +923,11 @@ def update_sddraft_dom(sd_file_path, feature_name, title, description, credits='
         connectionString = ''
 
         if is_shared_instance:
-            provider_value = 'ArcObjectsRasterRendering'
+            # Shared instance pool: provider must be 'DMaps' for a map/feature service.
+            # ('ArcObjectsRasterRendering' was a leftover from this script's image-service origin and is
+            # WRONG for feature services -- it was the reason the POC had to fall back to dedicated.)
+            # Esri: shared-pool services report provider=DMaps; min/max instances are 0 (the pool manages them).
+            provider_value = 'DMaps'
             min_instances = '0'
             max_instances = '0'
         else:
@@ -830,6 +1066,27 @@ def update_sddraft_dom(sd_file_path, feature_name, title, description, credits='
         if arcgisServerFolderName != '':
             # Update ServiceFolder to user specified arcgisServerFolderName.
             add_element_under_nested_parent(doc, 'ServiceFolder', arcgisServerFolderName, ['Configurations', 'SVCConfiguration'])
+            # if arcgisServerFolderName does not exist in the server, add it to the server via REST Admin API
+            # determine if the arcgisServerFolderName already exists on the server by checking
+            arcgisServerFolderName_exists = False
+            try:
+                server = gis.admin.servers.list()[0]
+                folder_list = server.services.folders
+                if arcgisServerFolderName in folder_list:
+                    arcgisServerFolderName_exists = True
+                    log_message(f"Folder '{arcgisServerFolderName}' already exists on the server.", 'info')
+                else:
+                    # create the folder on the server
+                    status = server.services.create_folder(arcgisServerFolderName)
+                    if status:
+                        log_message(f"Folder '{arcgisServerFolderName}' created on the server.", 'info')
+                    else:
+                        log_message(f"Failed to create folder '{arcgisServerFolderName}' on the server.", 'error')
+                        # traceback.print_exc()
+                        log_message(traceback.format_exc(), 'error')
+            except Exception as e:
+                log_message(f"Failed to check if folder '{arcgisServerFolderName}' exists on the server: {e}", 'info')
+                log_message(traceback.format_exc(), 'info')
             
         add_element_under_nested_parent(doc, 'RepositoryID', repository_id, ['Resources','SVCResource'])
         
@@ -867,11 +1124,76 @@ def update_sddraft_dom(sd_file_path, feature_name, title, description, credits='
         log_message(f"Failed to update sddraft DOM at '{sd_file_path}': {e}", 'error')
         return False
 
+def finalize_sddraft(sd_file_path, is_shared_instance=True):
+    """Post-export edits for the FEDERATED_SERVER / MAP_IMAGE referenced publish:
+      1) enable the FeatureServer extension (Feature Access) so the publish yields a FeatureServer
+         alongside the MapServer (the referenced Feature Layer the migration shares back to AGOL);
+      2) set the instance provider -- shared = 'DMaps' (min/max 0), dedicated = 'ArcObjects11' (min/max 1/2).
+    Deliberately does NOT touch the Databases / RepositoryID / connection-string blocks: arcpy already
+    wrote a correct BY-REFERENCE SD (copyDataToServer=False), so those must be left intact (this replaces
+    the old update_sddraft_dom() offline workaround). Returns True on success."""
+    log_message(f"Finalizing sddraft '{sd_file_path}' (enable Feature Access; set instance provider)", 'info')
+    try:
+        doc = DOM.parse(sd_file_path)
+
+        # 1) enable the FeatureServer extension (Feature Access)
+        enabled = False
+        for ext in doc.getElementsByTagName('SVCExtension'):
+            tns = ext.getElementsByTagName('TypeName')
+            if tns and tns[0].firstChild and tns[0].firstChild.data == 'FeatureServer':
+                for en in ext.getElementsByTagName('Enabled'):
+                    if en.firstChild:
+                        en.firstChild.data = 'true'
+                        enabled = True
+        log_message(f"\tFeatureServer extension enabled: {enabled}", 'info')
+
+        # 2) instance provider (best-effort -- a failure here must NOT block the publish)
+        try:
+            if is_shared_instance:
+                provider_value, min_i, max_i = 'DMaps', '0', '0'
+            else:
+                provider_value, min_i, max_i = 'ArcObjects11', '1', '2'
+            found_provider = False
+            for psp in doc.getElementsByTagName('PropertySetProperty'):
+                keys = psp.getElementsByTagName('Key')
+                if not (keys and keys[0].firstChild):
+                    continue
+                k = keys[0].firstChild.nodeValue
+                vals = psp.getElementsByTagName('Value')
+                new_val = None
+                if k in ('provider', 'Provider'):
+                    found_provider = True
+                    new_val = provider_value
+                elif k == 'minInstances':
+                    new_val = min_i
+                elif k == 'maxInstances':
+                    new_val = max_i
+                if new_val is not None and vals:
+                    if vals[0].firstChild:
+                        vals[0].firstChild.nodeValue = new_val
+                    else:
+                        vals[0].appendChild(doc.createTextNode(new_val))
+            if not found_provider:
+                add_key_value_element_under_nested_parent(
+                    doc, 'PropertySetProperty', 'provider', provider_value,
+                    ['Definition', 'Props', 'PropertyArray'],
+                    {'xsi:type': 'typens:PropertySetProperty'}, {'xsi:type': 'xs:string'})
+            log_message(f"\tInstance provider set to '{provider_value}' (shared={is_shared_instance})", 'info')
+        except Exception as e:
+            log_message(f"\t(could not set instance provider; service keeps its default: {e})", 'info')
+
+        with open(sd_file_path, 'w') as f:
+            doc.writexml(f)
+        return True
+    except Exception as e:
+        log_message(f"Failed to finalize sddraft at '{sd_file_path}': {e}", 'error')
+        return False
+
 def set_arcpy_environment():
     global workspace_type, workspace_factory, server_manager_db_name, workspace_full_path
     env_set = True
     
-    # prompt for DB Name for Server Manger e.g. sde.DEFAULT (ORG-APP1),  dbo.DEFAULT (ORG-APP1), GenericProj1_Datastore.gdb
+    # prompt for DB Name for Server Manger e.g. sde.DEFAULT (NBS-APP1),  dbo.DEFAULT (NBS-APP1), Beisa_Datastore.gdb
     
     # Ask the user if they are utlizing a FileGDB or SDE
     workspace_type = get_user_input("Workspace type (FileGDB or SDE)", default_value='SDE', value_to_check=workspace_type)
@@ -881,28 +1203,35 @@ def set_arcpy_environment():
         env_set = False
     else:
         if workspace_type == 'FILEGDB':
-            example_workspace_path = r"\\org-app2\D$\GenericArcGISDataDir\GIS\Example\GenericProj2\GenericProj1\GenericProj1_Datastore.gdb"
+            example_workspace_path = r"\\nbs-app2\t$\ArcGISDataset\GIS\RRG - NBS\Elite Ag\Beisa\Beisa_Datastore.gdb"
             workspace_factory = 'esriDataSourcesGDB.FileGDBWorkspaceFactory'
-            # prompt for DB Name for Server Manger e.g. sde.DEFAULT (ORG-APP1),  dbo.DEFAULT (ORG-APP1), GenericProj1_Datastore.gdb
-            example_server_manager_db_name = 'GenericProj1_Datastore.gdb'
+            # prompt for DB Name for Server Manger e.g. sde.DEFAULT (NBS-APP1),  dbo.DEFAULT (NBS-APP1), Beisa_Datastore.gdb
+            example_server_manager_db_name = 'Beisa_Datastore.gdb'
         else:
-            example_workspace_path = r"D:\GenericArcGISConnectionsDir\ORG_DB5_sde.sde"
+            example_workspace_path = r"T:\ArcGISDataset\Enterprise\Connections\NBS_WS_sde.sde"
             workspace_factory = 'esriDataSourcesGDB.SdeWorkspaceFactory'
-            example_server_manager_db_name = 'sde.DEFAULT (ORG-APP1)'
+            example_server_manager_db_name = 'sde.DEFAULT (NBS-APP1)'
         
-        workspace_full_path = get_user_input("Full path to the workspace", default_value=example_workspace_path, value_to_check=workspace_full_path)
+        # Run-level workspace is OPTIONAL: leave blank to provide a per-row 'workspace_full_path' column
+        # in the CSV (lets ONE run publish across multiple databases/schemas). A non-blank value here is
+        # the default/fallback for rows that do not override it. Example: {example_workspace_path}
+        workspace_full_path = get_user_input(
+            f"Full path to the workspace (blank = set per-row in the CSV; e.g. {example_workspace_path})",
+            default_value='', value_to_check=workspace_full_path)
         if workspace_full_path == "":
-            log_message("No workspace path provided. Exiting...", 'error')
-            env_set = False
+            log_message("No run-level workspace; expecting a per-row 'workspace_full_path' column in the CSV.", 'info')
         elif not os.path.exists(workspace_full_path):
             log_message(f"Database connection file {workspace_full_path} does not exist. Exiting...", 'error')
             env_set = False
-        
+
         if server_manager_db_name == '':
             print('NOTE: The name for the database in Server Manager displays on the Reference tab in the service.')
-            server_manager_db_name = get_user_input("Name for the database in ArcGIS Server Manager", default_value=example_server_manager_db_name, value_to_check=server_manager_db_name)
-    
-    if env_set:
+            print('NOTE: Leave blank to provide a per-row "server_manager_db" column in the CSV.')
+            server_manager_db_name = get_user_input(
+                f"Name for the database in ArcGIS Server Manager (blank = per-row; e.g. {example_server_manager_db_name})",
+                default_value='', value_to_check=server_manager_db_name)
+
+    if env_set and workspace_full_path != "":
         try:
             # Set the workspace to your enterprise geodatabase connection
             arcpy.env.workspace = workspace_full_path
@@ -910,32 +1239,48 @@ def set_arcpy_environment():
         except Exception as e:
             log_message(f"Failed to set the workspace to {workspace_full_path}: {e}", 'error')
             env_set = False
-    
+
     return env_set
 
 def connect_to_portal():
     global portal_url, gis, portal_username
     connected = False
     
-    # Get portal URL from the user or default to 'https://gis.example.com/arcgisportal'
-    portal_url = get_user_input("ArcGIS portal URL", default_value='https://gis.example.com/arcgisportal', value_to_check=portal_url)
+    # Get portal URL from the user or default to 'https://maps.rrgnbs.com/arcgisportal'
+    portal_url = get_user_input("ArcGIS portal URL", default_value='https://maps.rrgnbs.com/arcgisportal', value_to_check=portal_url)
     
-    # Get portal_username and password from the user
-    portal_username = get_user_input("ArcGIS Portal Username (not SSO)", default_value='gisadmin', value_to_check=portal_username)
-    portal_password = getpass.getpass(f"**  ArcGIS Portal Password for {portal_username}: ")
-    if portal_username == "" or portal_password == "":
-        log_message("Missing portal username or password.", 'error')
-    else:
+    # Portal login: try the Windows Credential Manager FIRST (key 'portal' -> nbs_arcgis_admin), falling
+    # back to an interactive prompt. The .env / --portal-username value is used as the default/prompt
+    # username; a stored credential's own username takes precedence when present.
+    if credential_store is not None:
+        # Shared helper: CREDENTIALS FIRST (key 'portal'), Pro/prompt fallback, and sign_in_arcpy=True so
+        # arcpy (used for publishing below) shares the same login -- FATAL if that arcpy sign-in fails.
+        # verify_cert is left at the GIS default; pass it through here if this site needs it.
         try:
-            arcpy.SignInToPortal(portal_url, portal_username, portal_password)
+            gis = credential_store.connect(portal_url, key="portal",
+                                           default_username=(portal_username or 'rrgadmin'),
+                                           sign_in_arcpy=True, log=lambda m: log_message(m, 'info'))
+            portal_username = gis.properties.user.username
             connected = True
             log_message(f"Connected to {portal_url} as {portal_username}")
         except Exception as e:
             log_message(f"Failed to connect to {portal_url}: {e}", 'error')
-        try:
-            gis = GIS(portal_url, portal_username, portal_password)
-        except Exception as e:
-            log_message(f"Failed to connect to arcgis: {e}", 'error')
+    else:
+        portal_username = get_user_input("ArcGIS Portal Username (not SSO)", default_value='rrgadmin', value_to_check=portal_username)
+        portal_password = getpass.getpass(f"**  ArcGIS Portal Password for {portal_username}: ")
+        if portal_username == "" or portal_password == "":
+            log_message("Missing portal username or password.", 'error')
+        else:
+            try:
+                arcpy.SignInToPortal(portal_url, portal_username, portal_password)
+                connected = True
+                log_message(f"Connected to {portal_url} as {portal_username}")
+            except Exception as e:
+                log_message(f"Failed to connect to {portal_url}: {e}", 'error')
+            try:
+                gis = GIS(portal_url, portal_username, portal_password)
+            except Exception as e:
+                log_message(f"Failed to connect to arcgis: {e}", 'error')
     return connected
 
 def format_feature_name(feature_name):
@@ -951,7 +1296,7 @@ def format_feature_name(feature_name):
     else:
         if database_name == '':
             # get the database name from the user
-            database_name = get_user_input("Name of the database", default_value='ORG_WS', value_to_check=database_name)
+            database_name = get_user_input("Name of the database", default_value='NBS_WS', value_to_check=database_name)
             if database_name == "":
                 log_message("Missing database name.", 'error')
                 return feature_dataset
@@ -968,26 +1313,163 @@ def format_feature_name(feature_name):
             feature_dataset = f"{database_name}.{database_owner_name}.{feature_name}"
     return feature_dataset
 
+def factory_for_workspace(path, ws_type=''):
+    """Workspace factory progID from an explicit type, else inferred from the path extension
+    (.gdb -> FileGDB, otherwise SDE)."""
+    wt = (ws_type or '').upper()
+    if wt == 'FILEGDB':
+        return 'esriDataSourcesGDB.FileGDBWorkspaceFactory'
+    if wt == 'SDE':
+        return 'esriDataSourcesGDB.SdeWorkspaceFactory'
+    return ('esriDataSourcesGDB.FileGDBWorkspaceFactory'
+            if os.path.splitext(path)[1].lower() == '.gdb'
+            else 'esriDataSourcesGDB.SdeWorkspaceFactory')
+
+def get_row_value(row_df, *names):
+    """First non-empty value among the given column names in a single-row DataFrame, else ''."""
+    for n in names:
+        if n in row_df.columns:
+            val = row_df[n].values[0]
+            if pd.notnull(val) and str(val).strip() != '':
+                return str(val).strip()
+    return ''
+
+def apply_row_env_overrides(row_df, base):
+    """Apply OPTIONAL per-row workspace/database/schema overrides from the publish CSV, so a single CSV
+    can target multiple databases and schemas in one run. Precedence: per-row CSV value > run-level base
+    (CLI arg / .env / prompt). Resets to the base first so an override never bleeds into the next row.
+    Sets arcpy.env.workspace for this row. Returns True if a usable workspace was set, else False (the
+    caller should skip the row). Recognized columns (all optional):
+        workspace_full_path (or workspace), workspace_type, database_name (or database),
+        database_owner (or database_owner_name / schema), server_manager_db (or server_manager_db_name),
+        portal_folder (or arcgis_portal_folder_name), server_folder (or arcgis_server_folder_name),
+        agol_owner_folder (or owner_folder) -> mapped to the server folder via Folder_Map.csv when
+        server_folder is not given explicitly,
+        item_id (or agol_item_id) -> looked up in ItemsToMigratePhase1.csv for the SDE connection /
+        database / schema (the source of truth; explicit workspace/database/owner columns override it)."""
+    global workspace_type, workspace_factory, database_name, database_owner_name, server_manager_db_name
+    global arcgisPortalFolderName, arcgisServerFolderName
+    # reset the mutable env back to the run-level base before applying this row's overrides
+    workspace_type = base['workspace_type']
+    database_name = base['database_name']
+    database_owner_name = base['database_owner_name']
+    server_manager_db_name = base['server_manager_db_name']
+    arcgisPortalFolderName = base['arcgisPortalFolderName']
+    arcgisServerFolderName = base['arcgisServerFolderName']
+
+    row_ws = get_row_value(row_df, 'workspace_full_path', 'workspace')
+    row_wstype = get_row_value(row_df, 'workspace_type')
+    row_db = get_row_value(row_df, 'database_name', 'database')
+    row_owner = get_row_value(row_df, 'database_owner', 'database_owner_name', 'schema')
+    row_smdb = get_row_value(row_df, 'server_manager_db', 'server_manager_db_name')
+    row_portal_folder = get_row_value(row_df, 'portal_folder', 'arcgis_portal_folder_name')
+    row_server_folder = get_row_value(row_df, 'server_folder', 'arcgis_server_folder_name')
+    row_agol_folder = get_row_value(row_df, 'agol_owner_folder', 'owner_folder')
+    row_item_id = get_row_value(row_df, 'item_id', 'agol_item_id')
+
+    # Master manifest (ItemsToMigratePhase1.csv) by AGOL Item ID is the source of truth for the SDE
+    # connection / database / schema; explicit per-row CSV columns still override it.
+    man_ws = man_db = man_owner = ''
+    if row_item_id and items_manifest_mod is not None:
+        rec = items_manifest_mod.get(row_item_id, _items_manifest)
+        if rec:
+            man_ws = rec.get('connection_filepath', '')
+            man_db = rec.get('target_database', '')
+            man_owner = rec.get('target_schema', '')
+            log_message(f"\tManifest: item {row_item_id} -> sde='{man_ws}', database='{man_db}', "
+                        f"schema='{man_owner}'", 'info')
+        else:
+            log_message(f"\titem {row_item_id} not in ItemsToMigratePhase1.csv; using CSV/base values", 'info')
+
+    if row_wstype:
+        workspace_type = row_wstype.upper()
+    # precedence for database / owner / workspace: explicit CSV column > master manifest > run-level base
+    if row_db:
+        database_name = row_db
+    elif man_db:
+        database_name = man_db
+    if row_owner:
+        database_owner_name = row_owner
+    elif man_owner:
+        database_owner_name = man_owner
+    if row_smdb:
+        server_manager_db_name = row_smdb
+    # Portal item folder: leave at the base/blank for migration publishes (item is created in the
+    # publishing user's ROOT; the per-item Portal_Owner_User_Folder is applied at the Phase 8 reassign).
+    if row_portal_folder:
+        arcgisPortalFolderName = '' if row_portal_folder.strip().upper() == 'ROOT' else row_portal_folder
+    # Server REST folder: an explicit server_folder wins ('ROOT' = root); otherwise resolve the mapped
+    # Portal_Server_Folder from the source AGOL owner-folder via Folder_Map.csv ('MAXENT'/'MaxEnt' -> 'MaxEnt').
+    if row_server_folder:
+        arcgisServerFolderName = '' if row_server_folder.strip().upper() == 'ROOT' else row_server_folder
+    elif row_agol_folder and folder_map_mod is not None:
+        mapped_server = folder_map_mod.server_folder(row_agol_folder, _folder_map)
+        arcgisServerFolderName = mapped_server
+        log_message(f"\tFolder map: AGOL owner-folder '{row_agol_folder}' -> server folder "
+                    f"'{mapped_server or '(root)'}'", 'info')
+
+    workspace = row_ws or man_ws or base['workspace_full_path']
+    if workspace == '':
+        log_message("\tNo workspace for this row (no per-row 'workspace_full_path', no manifest match, and "
+                    "no run-level workspace). Skipping.", 'error')
+        return False
+    if not os.path.exists(workspace):
+        log_message(f"\tWorkspace not found for this row: {workspace}. Skipping.", 'error')
+        return False
+    workspace_factory = factory_for_workspace(workspace, workspace_type)
+    try:
+        arcpy.env.workspace = workspace
+        log_message(f"Row workspace: {workspace}  ->  {database_name}.{database_owner_name}.* "
+                    f"(server_manager_db='{server_manager_db_name}')")
+    except Exception as e:
+        log_message(f"\tFailed to set workspace {workspace}: {e}", 'error')
+        return False
+    if arcgisPortalFolderName or arcgisServerFolderName:
+        log_message(f"\tRow folders: portal='{arcgisPortalFolderName}'; server='{arcgisServerFolderName}'", 'info')
+    return True
+
+def _folder_display_name(f):
+    """Folder title/name across arcgis API versions. The older API yields plain dicts (key 'title'); arcgis
+    >= 2.3 (here 2.4.1.1) yields `Folder` OBJECTS with `.name` (no `.get`, no `.title`). Handle both so the
+    folder-existence check doesn't crash with "'Folder' object has no attribute 'get'"."""
+    if isinstance(f, dict):
+        return f.get('title') or f.get('name') or ''
+    return getattr(f, 'title', None) or getattr(f, 'name', None) or ''
+
+
+def ensure_portal_folder(folder_name):
+    """Ensure the Portal content folder exists under the connected (publishing) user, creating it if
+    missing, so the published item lands in it (PortalFolderName in the SD draft). Best-effort: logs and
+    continues on any failure (the publish may still create it, else the item lands in the user's root).
+    Never raises. The authoritative per-item folder under the FINAL owner is (re)applied at the Phase-8
+    reassign; this only makes the publishing user's folder exist so PortalFolderName resolves now."""
+    global gis
+    if not folder_name or gis is None:
+        return
+    try:
+        me = gis.users.me
+        existing = {_folder_display_name(f).lower() for f in (getattr(me, 'folders', None) or [])}
+        if folder_name.lower() in existing:
+            log_message(f"Portal folder '{folder_name}' already exists for {me.username}", 'info')
+            return
+        # arcgis >= 2.3: gis.content.folders.create(); fall back to the deprecated create_folder() on older API.
+        try:
+            gis.content.folders.create(folder_name)
+        except Exception:
+            gis.content.create_folder(folder_name)
+        log_message(f"Created Portal folder '{folder_name}' for {me.username}", 'info')
+    except Exception as e:
+        log_message(f"Could not ensure Portal folder '{folder_name}' (publish may still create it): {e}", 'info')
+
 def get_feature_datasets():
     global feature_import_df, csv_import_file_path, specific_features_to_import
     feature_datasets = []
     
     if csv_import_file_path != '':
-        # check if import file path initialized from env file
+        # csv path supplied via the CLI positional arg or the .env file
         import_file = 'Y'
     else:
-        # check if script executed with an import file as the first argument
-        if len(sys.argv) > 1:
-            csv_import_file_path = sys.argv[1]
-            # if right of the last period is csv, then it is an import file
-            if csv_import_file_path.split('.')[-1].lower() == 'csv':
-                import_file = 'Y'
-                log_message(f"Import file provided as argument: {csv_import_file_path}", 'info')
-            else:
-                log_message(f"Invalid import file provided as argument: {csv_import_file_path}. Prompting user for file.", 'info')
-                csv_import_file_path = ''
-        if csv_import_file_path == '':
-            import_file = get_user_input("Import from a csv file (Y/N)?", default_value='Y')
+        import_file = get_user_input("Import from a csv file (Y/N)?", default_value='Y')
     if import_file.upper() == 'Y':
         if csv_import_file_path == '':
             print('\t*** CSV columns names: feature_name,title,summary,description,tags,credits,instance,portal_groups,categories')
@@ -1078,7 +1560,404 @@ def stage_service(sddraft_filepath, sd_filepath):
         log_message("Service staging failed", 'error')
     return service_staged
 
-def validate_and_update_portal_item(current_title, new_title, portal_group_names='', categories=''):
+def record_published_to_ledger(feature_name, service_name=None):
+    """Best-effort: mark the migration status-ledger row whose dest_feature_class == feature_name as
+    'published_to_portal', recording the new Enterprise item id + service url. The ledger is keyed by
+    SOURCE item_id (set by the copy phase, Step 3/3c); the publish phase only knows the dest
+    feature_name, so we join on dest_feature_class. Skipped-with-warning if the helper is unavailable
+    or no matching row exists (e.g. the copy phase did not record this item). Never raises.
+
+    service_name (default feature_name) is the PUBLISHED service/item name used for the portal-item
+    lookups -- it differs from feature_name when --CreateNewIfExisting bumped the service to a free
+    suffixed name; the ledger JOIN still uses the original feature_name (the SDE feature class).
+
+    Returns (source_item_id, enterprise_item_id) so the caller can drive the post-publish symbology
+    apply; either/both may be None when nothing could be resolved."""
+    lookup_name = service_name or feature_name
+    if ledger_mod is None:
+        log_message("ledger: helper not importable; published state not recorded", 'info')
+        return None, None
+    try:
+        match_id = None
+        for item_id, row in ledger_mod.get_ledger().rows.items():
+            if (row.get('dest_feature_class') or '').lower() == feature_name.lower():
+                match_id = item_id
+                break
+        if not match_id:
+            log_message(f"ledger: no row with dest_feature_class == '{feature_name}'; published state "
+                        f"not recorded (run the copy phase first, or add the row)", 'info')
+            return None, None
+        ent_item_id, ent_url = '', ''
+        try:
+            qry = 'title:"' + lookup_name + '"'
+            items = gis.content.search(query=qry, max_items=10, sort_field='modified', sort_order='desc')
+            for it in (items or []):
+                if it.get('type', '') == 'Feature Service':
+                    ent_item_id = it.get('id', '')
+                    ent_url = getattr(it, 'url', '') or ''
+                    break
+        except Exception as e:
+            log_message(f"ledger: could not look up published item for '{lookup_name}': {e}", 'info')
+        # Fallback: the title search can miss the just-published item (indexing lag / title mismatch). Resolve
+        # it from the on-server service instead (URL-matched), so we don't advance the state with a BLANK
+        # enterprise_item_id (the bug where a row showed published_to_portal but no item id).
+        if not ent_item_id:
+            try:
+                svcs = find_existing_services(lookup_name.replace(' ', '_'), arcgisServerFolderName)
+                if svcs:
+                    ent_item_id, ent_url = find_portal_item_for_service(svcs[0], lookup_name, '')
+                    if ent_item_id:
+                        log_message(f"ledger: resolved enterprise item for '{lookup_name}' via on-server "
+                                    f"service lookup -> {ent_item_id}", 'info')
+            except Exception as e:
+                log_message(f"ledger: on-server fallback lookup for '{feature_name}' failed: {e}", 'info')
+        notes = None
+        if not ent_item_id:
+            # Still couldn't resolve it -- record the state (the upload DID succeed) but flag it loudly and
+            # leave a note so the missing id is visible and can be backfilled, instead of silently empty.
+            log_message(f"ledger: WARNING item {match_id} published but enterprise_item_id could NOT be "
+                        f"resolved for '{feature_name}'; recorded with a blank id -- resolve/backfill "
+                        f"manually.", 'info')
+            notes = _append_ledger_note(match_id,
+                                        "published_to_portal recorded but enterprise_item_id unresolved "
+                                        "(title + on-server lookups found no portal item); backfill manually.")
+        ledger_mod.set_state(match_id, "published_to_portal",
+                             enterprise_item_id=ent_item_id, enterprise_service_url=ent_url,
+                             **({'notes': notes} if notes else {}))
+        log_message(f"ledger: item {match_id} -> published_to_portal (enterprise item "
+                    f"{ent_item_id or 'UNKNOWN'})", 'info')
+        return match_id, (ent_item_id or None)
+    except Exception as e:
+        log_message(f"ledger update skipped: {e}", 'info')
+    return None, None
+
+
+def ledger_source_for_feature(feature_name):
+    """Resolve the SOURCE item_id for a destination feature name via the ledger join
+    (dest_feature_class == feature_name), so a publish FAILURE can be recorded against the right row.
+    Returns the source item_id or None. Best-effort -- never raises."""
+    if ledger_mod is None:
+        return None
+    try:
+        for item_id, row in ledger_mod.get_ledger().rows.items():
+            if (row.get('dest_feature_class') or '').lower() == feature_name.lower():
+                return item_id
+    except Exception as e:
+        log_message(f"ledger: source lookup for '{feature_name}' failed: {e}", 'info')
+    return None
+
+
+# ----------------------------------------------------------------------------
+# Existing-service guard helpers
+# ----------------------------------------------------------------------------
+# Before creating/publishing a service, check whether one of the same name already exists on the federated
+# server. These helpers (a) find any matching server Service object(s), (b) read each one's manifest to test
+# whether it references the SAME SDE feature class by reference, and (c) resolve the Enterprise portal item
+# for an existing service so it can be recorded in the ledger. All are best-effort -- a transient admin/REST
+# failure returns an empty/"unknown" result rather than raising, so publishing is never blocked by a hiccup.
+
+def _get_federated_server():
+    """Return the portal's first federated ArcGIS Server admin object, or None. Best-effort."""
+    try:
+        servers = gis.admin.servers.list() if gis is not None else []
+        return servers[0] if servers else None
+    except Exception as e:
+        log_message(f"Could not list federated servers (existing-service check skipped): {e}", 'info')
+        return None
+
+def _service_name_of(svc):
+    """Best-effort read of a server Service object's serviceName (falls back to parsing its URL)."""
+    for getter in (lambda: svc.properties['serviceName'],
+                   lambda: svc.properties.serviceName,
+                   lambda: getattr(svc, '_serviceName', '')):
+        try:
+            v = getter()
+            if v:
+                return str(v)
+        except Exception:
+            pass
+    try:
+        # .../<name>/MapServer or .../<name>/FeatureServer -> the segment before the type
+        parts = (svc.url or '').rstrip('/').split('/')
+        if len(parts) >= 2:
+            return parts[-2]
+    except Exception:
+        pass
+    return ''
+
+def find_existing_services(service_name, server_folder=''):
+    """Return a list of server Service objects whose serviceName matches service_name (case-insensitive),
+    searching the target server folder first, then root, then every other folder. Best-effort -> []."""
+    matches = []
+    server = _get_federated_server()
+    if server is None:
+        return matches
+    target = (service_name or '').replace(' ', '_').lower()
+    if not target:
+        return matches
+    try:
+        all_folders = list(server.services.folders)
+    except Exception:
+        all_folders = ['/']
+    # Ordered, de-duped folder search list: target folder, root, then the rest.
+    search_folders = []
+    for f in ([server_folder] if server_folder else []) + ['/'] + all_folders:
+        fnorm = f or '/'
+        if fnorm not in search_folders:
+            search_folders.append(fnorm)
+    for folder in search_folders:
+        try:
+            svc_list = server.services.list(folder=(None if folder == '/' else folder))
+        except Exception as e:
+            log_message(f"\tCould not list services in folder '{folder}': {e}", 'info')
+            continue
+        for svc in (svc_list or []):
+            try:
+                if _service_name_of(svc).lower() == target:
+                    matches.append(svc)
+            except Exception:
+                pass
+    return matches
+
+def service_references_dataset(svc, qualified_dataset_name):
+    """Return (referenced: bool, detail: str). Reads the service manifest and tests whether any referenced
+    dataset matches the expected SDE feature class (qualified name, e.g. RRGOrg.ws.World_Provinces). Matches
+    case-insensitively on the full qualified onServerName/onPremisePath (equality or '.'-suffix), then falls
+    back to the bare table name. Best-effort -> (False, reason) when the manifest can't be read/parsed."""
+    expected = (qualified_dataset_name or '').strip().lower()
+    expected_bare = expected.split('.')[-1] if expected else ''
+    if not expected:
+        return False, "no expected dataset name to compare"
+    try:
+        raw = svc.service_manifest('json')
+    except Exception as e:
+        return False, f"manifest unavailable: {e}"
+    try:
+        manifest = json.loads(raw) if isinstance(raw, str) else raw
+    except Exception as e:
+        return False, f"manifest parse failed: {e}"
+    found = []
+    try:
+        for db in (manifest.get('databases') or []):
+            for ds in (db.get('datasets') or []):
+                for k in ('onServerName', 'onPremisePath'):
+                    name = ds.get(k) or ''
+                    if name:
+                        found.append(name)
+    except Exception as e:
+        return False, f"manifest structure unexpected: {e}"
+    found_lower = [n.lower() for n in found]
+    for n in found_lower:
+        if n == expected or n.endswith('.' + expected):
+            return True, f"matched dataset '{n}' to expected '{expected}'"
+    if expected_bare:
+        for n in found_lower:
+            bare = n.replace('\\', '/').split('/')[-1].split('.')[-1]
+            if bare == expected_bare:
+                return True, f"matched bare table '{bare}' (in '{n}') to expected '{expected_bare}'"
+    return False, f"no referenced dataset matched '{expected}' (found: {found})"
+
+def find_portal_item_for_service(svc, feature_name, title=''):
+    """Resolve the Enterprise portal item id + url for an already-published service. Searches portal content
+    by title/feature name and prefers an item whose URL matches the service URL; otherwise returns the first
+    Feature Service. Best-effort -> ('', service_url-or-'')."""
+    svc_url = ''
+    try:
+        svc_url = (svc.url or '') if svc is not None else ''
+    except Exception:
+        svc_url = ''
+    try:
+        seen, candidates = set(), []
+        for q in ([('title:"' + title + '"')] if title else []) + ['title:"' + feature_name + '"']:
+            for it in (gis.content.search(query=q, max_items=25, sort_field='modified', sort_order='desc') or []):
+                if it.id not in seen:
+                    seen.add(it.id)
+                    candidates.append(it)
+        # service-url match first (most reliable join), restricted to service-type items
+        norm = svc_url.lower().split('/services/')[-1].rstrip('/') if svc_url else ''
+        if norm:
+            for it in candidates:
+                it_url = (getattr(it, 'url', '') or '').lower()
+                if norm in it_url and it.type in ('Feature Service', 'Map Image Layer', 'Map Service'):
+                    return it.id, (getattr(it, 'url', '') or '')
+        # fall back to the first Feature Service
+        for it in candidates:
+            if it.type == 'Feature Service':
+                return it.id, (getattr(it, 'url', '') or '')
+    except Exception as e:
+        log_message(f"Could not resolve portal item for existing service '{feature_name}': {e}", 'info')
+    return '', svc_url
+
+def _append_ledger_note(src_id, note):
+    """Append ' | '-joined note text to a ledger row's notes column (preserving any existing notes)."""
+    try:
+        existing = ((ledger_mod.get_ledger().rows.get(src_id) or {}).get('notes') or '').strip()
+        return (existing + ' | ' + note) if existing else note
+    except Exception:
+        return note
+
+def record_existing_service_as_published(feature_name, svc, title, note):
+    """Record an EXISTING (already on-server) service as this item's published_to_portal milestone: resolve
+    the source ledger row (dest_feature_class join), find the Enterprise item id/url for the existing service,
+    set the state, and append a note explaining the decision. Best-effort -- never raises."""
+    if ledger_mod is None:
+        log_message("ledger: helper not importable; existing-service state not recorded", 'info')
+        return
+    try:
+        src_id = ledger_source_for_feature(feature_name)
+        if not src_id:
+            log_message(f"ledger: no row with dest_feature_class == '{feature_name}'; existing-service "
+                        f"state not recorded", 'info')
+            return
+        ent_item_id, ent_url = find_portal_item_for_service(svc, feature_name, title)
+        ledger_mod.set_state(src_id, "published_to_portal",
+                             enterprise_item_id=ent_item_id, enterprise_service_url=ent_url,
+                             notes=_append_ledger_note(src_id, note))
+        log_message(f"ledger: item {src_id} -> published_to_portal via existing service "
+                    f"(enterprise item {ent_item_id or 'UNKNOWN -- resolve manually'})", 'info')
+    except Exception as e:
+        log_message(f"ledger: could not record existing-service state for '{feature_name}': {e}", 'info')
+
+def record_ledger_note(feature_name, note):
+    """Append a note to this item's ledger row (dest_feature_class join) WITHOUT changing its state.
+    Best-effort -- never raises."""
+    if ledger_mod is None:
+        return
+    try:
+        src_id = ledger_source_for_feature(feature_name)
+        if src_id:
+            ledger_mod.update(src_id, notes=_append_ledger_note(src_id, note))
+    except Exception as e:
+        log_message(f"ledger: could not record note for '{feature_name}': {e}", 'info')
+
+def _split_trailing_int(name):
+    """Split a trailing '_<int>' suffix off a name: 'Foo_polygons_1' -> ('Foo_polygons', 1);
+    'Foo_polygons' -> ('Foo_polygons', 0). Used to increment the suffix for --CreateNewIfExisting."""
+    if '_' in name:
+        stem, tail = name.rsplit('_', 1)
+        if tail.isdigit():
+            return stem, int(tail)
+    return name, 0
+
+def next_free_service_name(base_name, server_folder=''):
+    """Return the next service name (suffix-incremented) that does NOT already exist on the federated server,
+    starting from base_name's trailing integer + 1 (e.g. 'X_polygons_1' -> first free of 'X_polygons_2',
+    '_3', ...; 'X_polygons' -> 'X_polygons_1', '_2', ...). Returns None if none is free in a sane range or
+    the server can't be queried (caller then falls back to an error). Best-effort -- never raises."""
+    name = (base_name or '').replace(' ', '_')
+    if not name:
+        return None
+    stem, n = _split_trailing_int(name)
+    try:
+        for _ in range(1, 1000):
+            n += 1
+            candidate = f"{stem}_{n}"
+            if not find_existing_services(candidate, server_folder):
+                return candidate
+    except Exception as e:
+        log_message(f"\tCould not compute a free service name from '{base_name}': {e}", 'info')
+    return None
+
+def resolve_existing_service_action(feature_name, qualified_dataset_name, title):
+    """Existing-service guard, run BEFORE creating/publishing a service. Decides what to do when a service of
+    the same name already exists on the federated server:
+      * --OverrideExisting set                          -> ('proceed', None) (overwrite/republish; note recorded).
+      * existing service references the SAME SDE feature -> ('use_existing', None) (do NOT republish; record
+        published_to_portal + enterprise item id + note). This is automatic and independent of the flags.
+      * --UseExisting set (same ref not confirmed)      -> ('use_existing', None) (assume existing is intended).
+      * --CreateNewIfExisting set (same ref not confirmed) -> ('create_new', '<free suffixed name>') (publish a
+        NEW service under that free name, still referencing OUR SDE feature class).
+      * none of the above                               -> ('error', None) (record a ledger error; skip row).
+    Returns (action, new_service_name). When no service of this name exists, returns ('proceed', None).
+    A failure to query the server returns ('proceed', None) so a transient admin error does not block
+    publishing (the upload step still guards against a true name clash). Precedence: override > use > create."""
+    service_name = (feature_name or '').replace(' ', '_')
+    existing = find_existing_services(service_name, arcgisServerFolderName)
+    if not existing:
+        return 'proceed', None
+    log_message(f"Service name '{service_name}' already exists on the server "
+                f"({len(existing)} matching service(s) found).", 'info')
+    # 1) Explicit override wins: republish over the existing service.
+    if override_existing:
+        note = f"--OverrideExisting set: overwriting existing service '{service_name}'."
+        log_message(note, 'info')
+        record_ledger_note(feature_name, note)
+        return 'proceed', None
+    # 2) Auto-detect a service that references the SAME SDE feature class by reference.
+    detail = ''
+    for svc in existing:
+        referenced, detail = service_references_dataset(svc, qualified_dataset_name)
+        log_message(f"\tExisting service '{_service_name_of(svc)}' reference check: {detail}", 'info')
+        if referenced:
+            note = (f"Existing service '{service_name}' already references the same SDE feature class "
+                    f"'{qualified_dataset_name}' ({detail}); used existing service (not republished).")
+            log_message(note, 'info')
+            record_existing_service_as_published(feature_name, svc, title, note)
+            return 'use_existing', None
+    # 3) --UseExisting: accept the existing service as the intended one.
+    if use_existing:
+        svc = existing[0]
+        note = (f"--UseExisting set: assuming existing service '{service_name}' is the intended feature "
+                f"(same SDE reference NOT confirmed: {detail}); used existing (not republished).")
+        log_message(note, 'info')
+        record_existing_service_as_published(feature_name, svc, title, note)
+        return 'use_existing', None
+    # 4) --CreateNewIfExisting: leave the existing service alone, publish a NEW one under a free suffixed name
+    #    that still references OUR SDE feature class (qualified_dataset_name).
+    if create_new_if_existing:
+        new_name = next_free_service_name(service_name, arcgisServerFolderName)
+        if new_name:
+            note = (f"--CreateNewIfExisting set: existing service '{service_name}' is a different dataset "
+                    f"(same SDE reference NOT confirmed: {detail}); publishing a NEW service '{new_name}' "
+                    f"referencing '{qualified_dataset_name}'.")
+            log_message(note, 'info')
+            record_ledger_note(feature_name, note)
+            return 'create_new', new_name
+        log_message(f"--CreateNewIfExisting set but could not compute a free service name from "
+                    f"'{service_name}'; skipping this item.", 'error')
+        return 'error', None
+    # 5) Nothing told us what to do -> record an error (auto-funneled to the ledger by log_message) and skip.
+    log_message(f"Service name '{service_name}' already exists and does not reference the same SDE feature "
+                f"class '{qualified_dataset_name}' ({detail}). None of --OverrideExisting / --UseExisting / "
+                f"--CreateNewIfExisting was set; skipping this item.", 'error')
+    return 'error', None
+
+
+# DataDump cache (same location the Step 6 symbology apply reads). Holds the captured AGOL item JSON,
+# including the ORIGINAL item description. Override with env METADATA_DUMP_DIR.
+METADATA_DUMP_DIR = os.getenv(
+    "METADATA_DUMP_DIR",
+    r"T:\ArcGISDataset\Data Science Scripts\Other scripts\Admin\Metadata\Output\AGOL\DataDump")
+
+def get_source_description(src_item_id):
+    """Return the ORIGINAL AGOL item's description (HTML) from the cached DataDump
+    'AGOL_<id>_description_*.json' (or '_get'), so the published Enterprise items can mirror the source
+    description instead of the CSV summary. Returns '' if not found. Never raises."""
+    if not src_item_id:
+        return ''
+    try:
+        if not os.path.isdir(METADATA_DUMP_DIR):
+            log_message(f"\t(DataDump dir not found for source description: {METADATA_DUMP_DIR})", 'info')
+            return ''
+        prefix = f"agol_{src_item_id.lower()}"
+        candidates = [fn for fn in os.listdir(METADATA_DUMP_DIR)
+                      if fn.lower().startswith(prefix) and fn.lower().endswith('.json')
+                      and '_data' not in fn.lower()
+                      and ('_description' in fn.lower() or '_get' in fn.lower())]
+        # prefer the _description file over _get
+        candidates.sort(key=lambda f: ('_description' not in f.lower(), f))
+        for fn in candidates:
+            with open(os.path.join(METADATA_DUMP_DIR, fn), 'r', encoding='utf-8') as fh:
+                data = json.load(fh)
+            desc = data.get('description')
+            if desc:
+                log_message(f"\tSource description loaded from {fn} ({len(desc)} chars)", 'info')
+                return desc
+    except Exception as e:
+        log_message(f"\t(could not read source description for {src_item_id}: {e})", 'info')
+    return ''
+
+def validate_and_update_portal_item(current_title, new_title, portal_group_names='', categories='', src_item_id=''):
     global portal_group_dict
     log_message(f"Validating and updating portal item for {current_title} to {new_title}", 'info')
     item_id = ''
@@ -1086,19 +1965,37 @@ def validate_and_update_portal_item(current_title, new_title, portal_group_names
         qry = 'title:"' + current_title + '"' + ' OR title:"' + new_title + '"'
         gis_items = gis.content.search(query=qry, max_items=10, sort_field='modified', sort_order='desc')
         if gis_items or (not gis_items is None):
-            # get the first result
+            # get the first result (used below for categories/groups)
             gis_item = gis_items[0]
             item_id = gis_item.get('id', '')
             if item_id != '':
-                try:
-                    item_title = gis_item.get('title', '')
-                    log_message(f"Found portal item {item_id} with title '{item_title}'", 'info')
-                    if new_title != current_title:
-                        if item_title == '' or item_title == current_title:
-                            gis_item.update({'title': new_title})
-                            log_message(f"\tUpdated item title to '{new_title}'", 'info')
-                except Exception as e:
-                    log_message(f"Failed to update item title: {e}", 'error')
+                # Title + description sync across the PUBLISHED PAIR. A referenced publish creates a
+                # MapServer + FeatureServer that share the service name as their title, so update BOTH so
+                # the two portal items match (decision #9). The description is taken from the ORIGINAL AGOL
+                # item (cached _description.json) rather than the concise CSV summary.
+                src_description = get_source_description(src_item_id) if src_item_id else ''
+                for pub_item in gis_items:
+                    try:
+                        p_type = pub_item.get('type', '')
+                        p_url = (pub_item.get('url', '') or '')
+                        p_name = (pub_item.get('name', '') or '')
+                        # restrict to the just-published pair (Feature/Map service carrying the service name)
+                        if p_type not in ('Feature Service', 'Map Service', 'Map Image Layer'):
+                            continue
+                        if (f"/{current_title}/" not in p_url) and (current_title.lower() not in p_name.lower()):
+                            continue
+                        props = {}
+                        p_title = pub_item.get('title', '')
+                        if new_title and p_title != new_title:
+                            props['title'] = new_title
+                        if src_description:
+                            props['description'] = src_description
+                        if props:
+                            pub_item.update(item_properties=props)
+                            log_message(f"\tUpdated {p_type} item {pub_item.get('id','')}: "
+                                        f"{', '.join(props.keys())}", 'info')
+                    except Exception as e:
+                        log_message(f"Failed to update item {pub_item.get('id','')}: {e}", 'error')
                     
                 '''
                 try:
@@ -1138,19 +2035,14 @@ def validate_and_update_portal_item(current_title, new_title, portal_group_names
                     log_message(f"Failed to update popupInfo title: {e}", 'error')
                 '''
                 try:
-                    if categories != '':
-                        category_list = []
-                        if isinstance(categories, str):
-                            category_list = categories.split(',')
-                        elif isinstance(categories, list):
+                    if categories is not None and not (isinstance(categories, float) and pd.isnull(categories)) and categories != '':
+                        if isinstance(categories, list):
                             category_list = categories
                         else:
-                            # try to convert categories to a string
-                            try:
-                                categories_str = str(categories)
-                                category_list = categories_str.split(',')
-                            except:
-                                category_list = [categories]
+                            category_list = str(categories).split(',')
+                        # drop blanks and stray 'nan' (empty CSV cell read as NaN -> 'nan')
+                        category_list = [c.strip() for c in category_list
+                                         if c is not None and c.strip() != '' and c.strip().lower() != 'nan']
                         if category_list != []:
                             gis_item.update(item_properties={"categories": category_list})
                             log_message(f"\tUpdated item categories to {category_list}", 'info')
@@ -1209,7 +2101,7 @@ def validate_and_update_portal_item(current_title, new_title, portal_group_names
     except Exception as e:
         log_message(f"Failed to update item '{new_title}' ({item_id}): {e}", 'error')
     if item_id != '':
-        log_message(f"Validated portal item '{new_title}' ({item_id})")
+        log_message(f"Validated portal item '{new_title}' ({item_id})", 'info')
     return item_id
 
 
@@ -1217,7 +2109,12 @@ def validate_and_update_portal_item(current_title, new_title, portal_group_names
 
 init_logging()
 
+cli_args = parse_cli_args()
+
 init_global_variables()
+
+# CLI args take precedence over .env (which still falls back to interactive prompts).
+apply_cli_overrides(cli_args)
 
 repository_id_error = False
 if repository_id == '':
@@ -1239,7 +2136,7 @@ if repository_id != '':
     except:
         repository_id_error = True
 if repository_id_error:
-    log_message('\t*** Find the RepositoryID in the manifest.xml of a service manually published to Portal from Pro for the same connection. See \\org-app2\c$\arcgisserver\directories\arcgissystem\arcgisinput.')
+    log_message('\t*** Find the RepositoryID in the manifest.xml of a service manually published to Portal from Pro for the same connection. See \\nbs-app2\c$\arcgisserver\directories\arcgissystem\arcgisinput.')
     get_user_input('Press enter to quit...')
     if repository_id == '':
         log_message('\t*** RepositoryID is required.', 'error')
@@ -1252,8 +2149,8 @@ if not env_set:
     exit()
 
 if stageService:
-    # prompt to use https://gis.example.com/arcgisserver as the federated_server_url or input a different url
-    federated_server_url = get_user_input("Federated server URL", default_value='https://gis.example.com/arcgisserver', value_to_check=federated_server_url)
+    # prompt to use https://maps.rrgnbs.com/arcgisserver as the federated_server_url or input a different url
+    federated_server_url = get_user_input("Federated server URL", default_value='https://maps.rrgnbs.com/arcgisserver', value_to_check=federated_server_url)
     connected_to_portal = connect_to_portal()
     if not connected_to_portal:
         exit()
@@ -1275,34 +2172,57 @@ else:
     else:
         is_shared_instance = False
     
-# get portal and server folder names to publish to from the user
-arcgisPortalFolderName = get_user_input("ArcGIS Portal folder name, e.g. 'ENT_Enterprise' (or press enter to publish to root)", value_to_check=arcgisPortalFolderName)
-arcgisServerFolderName = get_user_input("ArcGIS Server folder name, e.g. 'ENT_Enterprise' (or press enter to publish to root)", value_to_check=arcgisServerFolderName)
+# Portal/server folders are resolved PER-ROW (CSV columns portal_folder / server_folder, or the mapped
+# Portal_Server_Folder via agol_owner_folder + Folder_Map.csv), so do NOT prompt here. Any run-level value
+# (.env / --portal-folder / --server-folder) is only the fallback for rows that omit them. A 'ROOT' sentinel
+# (any case) means the root / no folder -> normalized to '' here and in the per-row override path.
+if (arcgisPortalFolderName or '').strip().upper() == 'ROOT':
+    arcgisPortalFolderName = ''
+if (arcgisServerFolderName or '').strip().upper() == 'ROOT':
+    arcgisServerFolderName = ''
+log_message(f"Run-level folders (fallback for rows that omit them): portal='{arcgisPortalFolderName}', "
+            f"server='{arcgisServerFolderName}' (blank = root)", 'info')
 
 default_empty_tags = "by reference"
 default_tags = get_user_input("Tags to be appended to all datasets in this import", value_to_check=default_tags)
 if default_tags != "":
     default_empty_tags = default_tags
     
+# Capture the run-level (CLI / .env / prompt) environment as the BASE. Optional per-row CSV columns
+# (workspace_full_path / database_name / database_owner / server_manager_db / workspace_type) override
+# these per row, so one CSV can publish across multiple databases and schemas in a single run. Rows
+# without those columns fall back to the base; apply_row_env_overrides resets to the base each row so
+# an override never bleeds into the next row.
+base_env = {
+    'workspace_full_path': workspace_full_path,
+    'workspace_type': workspace_type,
+    'database_name': database_name,
+    'database_owner_name': database_owner_name,
+    'server_manager_db_name': server_manager_db_name,
+    'arcgisPortalFolderName': arcgisPortalFolderName,
+    'arcgisServerFolderName': arcgisServerFolderName,
+}
+
 if feature_import_df.empty:
-    # JSON data to import will come from the ENTEnterprise_all_json_data.json file within the Input directory
+    # JSON data to import will come from the RRGEnterprise_all_json_data.json file within the Input directory
     # set the input_path to the Input directory within the script's directory
     input_path = current_dir
     # Create the Input directory if it does not exist
     if os.path.exists(os.path.join(current_dir, 'Input')):
         input_path = os.path.join(current_dir, 'Input')
-    all_json_data_file_path = os.path.join(input_path, 'ENTEnterprise_all_json_data.json')
+    all_json_data_file_path = os.path.join(input_path, 'RRGEnterprise_all_json_data.json')
 
 # cycle through all feature datasets in feature_datasets
 len_feature_datasets = len(feature_datasets)
 log_message(f"Processing {len_feature_datasets} feature datasets")
 for feature_dataset in feature_datasets:
+    current_feature_name = ''   # clear between items so a stray error isn't attributed to the prior feature
     log_message(f"****************************************************", 'info', message_details=None, reset_log_hist=True)
-    
+
     feature_dataset = str(feature_dataset)
     
     # Output locations for the service definition draft and final .sd file
-    sddraft_output_filepath = os.path.join(output_path, f"{feature_dataset}.sddraft")
+    sddraft_output_filepath = os.path.join(sd_output_dir, f"{feature_dataset}.sddraft")
     sd_output_filepath = sddraft_output_filepath.replace('.sddraft', '.sd')
     log_message(sddraft_output_filepath, 'info')
     log_message(sd_output_filepath, 'info')
@@ -1318,29 +2238,71 @@ for feature_dataset in feature_datasets:
     spatialReference = ''
     data_found = False
     feature_name = feature_dataset.split(".")[-1]
-    
+    # Attribute any 'error' logged during this item's publish to its ledger row (see _record_error_to_ledger).
+    # This is the dest_feature_class the ledger join uses; later in-place edits to feature_name (e.g. space->_)
+    # don't affect the join because the CSV feature_name has no spaces.
+    current_feature_name = feature_name
+
     if feature_import_df.empty:
         feature_dataset_DBpath = feature_dataset
         feature_dataset_json = find_json_data(feature_dataset)
         if feature_dataset_json:
             data_found = True
             feature_name = feature_dataset_json.get('name', feature_name)
-            title = feature_dataset_json.get('org_title', '')
-            summary = feature_dataset_json.get('org_summary', '')
-            description = feature_dataset_json.get('org_description', '')
-            tags = feature_dataset_json.get('org_tags', '')
-            spatialReference = feature_dataset_json.get('org_spatialReference', '')
+            title = feature_dataset_json.get('nbs_title', '')
+            summary = feature_dataset_json.get('nbs_summary', '')
+            description = feature_dataset_json.get('nbs_description', '')
+            tags = feature_dataset_json.get('nbs_tags', '')
+            spatialReference = feature_dataset_json.get('nbs_spatialReference', '')
         else:
             log_message('Summary set to feature name', 'info')
             summary = feature_name
     else:
         # get data from the import file
-        feature_dataset_DBpath = format_feature_name(feature_name)
         feature_dataset_row = feature_import_df.loc[feature_import_df['feature_name'] == feature_name]
         if feature_dataset_row.empty:
             log_message(f"\tERROR: No data found for {feature_name}", 'error')
+            feature_dataset_DBpath = format_feature_name(feature_name)
         else:
             data_found = True
+            # Honor the run-scope allowlist (MIGRATION_ITEM_ALLOWLIST): skip a CSV row whose SOURCE item_id is
+            # outside the current batch's scope, so --max-items bounds publishing too. No-op when the env var
+            # is unset or the row has no item_id (then we can't scope it and publish it as before).
+            if ledger_mod is not None:
+                row_item_id = get_row_value(feature_dataset_row, 'item_id', 'agol_item_id')
+                if row_item_id and not ledger_mod.item_allowed(row_item_id):
+                    log_message(f"Skipping '{feature_name}' (item {row_item_id}): outside run-scope "
+                                f"allowlist (MIGRATION_ITEM_ALLOWLIST).", 'info')
+                    continue
+                # Ledger work-selection gate -- the SAME helper the deprecate gate / resume use, so one place
+                # decides "is this row workable". row_eligible_to_advance(row, done_state='published_to_portal')
+                # skips a row that:
+                #   * carries a recorded error (e.g. still at 'copied_to_gdb' after a failed copy/load) --
+                #     must be resolved + cleared (ledger clear_errors) before the next run picks it up; we do
+                #     NOT publish on top of a bad/incomplete SDE load, and
+                #   * has already reached 'published_to_portal' (on the server already -- re-publishing only
+                #     re-detects the existing service + re-appends a 'used existing service' note each sweep).
+                # --OverrideExisting forces a republish of an ALREADY-PUBLISHED row, but never of an errored
+                # (or out-of-scope) one. A not-yet-in-ledger row (no row object) is published as before.
+                ledger_row = ledger_mod.get_row(row_item_id) if row_item_id else None
+                if ledger_row is not None:
+                    eligible, why = ledger_mod.row_eligible_to_advance(
+                        ledger_row, done_state="published_to_portal")
+                    if (not eligible) and override_existing and not ledger_mod.row_has_error(ledger_row):
+                        # Only the 'already reached published_to_portal' reason remains (allowlist passed
+                        # above, no error) -- honor --OverrideExisting and force the republish.
+                        log_message(f"--OverrideExisting: re-publishing '{feature_name}' (item "
+                                    f"{row_item_id}) despite ledger gate ({why}).", 'info')
+                        eligible = True
+                    if not eligible:
+                        log_message(f"Skipping '{feature_name}' (item {row_item_id}): {why}", 'info')
+                        continue
+            # Apply OPTIONAL per-row workspace/database/schema overrides BEFORE building the qualified
+            # name (format_feature_name uses the database/owner globals). Skip the row if its workspace
+            # is missing/invalid. Rows without the override columns keep the run-level base env.
+            if not apply_row_env_overrides(feature_dataset_row, base_env):
+                continue
+            feature_dataset_DBpath = format_feature_name(feature_name)
             title = feature_dataset_row['title'].values[0]
             summary = feature_dataset_row['summary'].values[0]
             description = feature_dataset_row['description'].values[0]
@@ -1351,9 +2313,11 @@ for feature_dataset in feature_datasets:
                 if instance == 'dedicated':
                     feature_is_shared_instance = False
             if 'portal_groups' in feature_dataset_row:
-                portal_groups = feature_dataset_row['portal_groups'].values[0]
+                pg = feature_dataset_row['portal_groups'].values[0]
+                portal_groups = '' if pd.isnull(pg) else str(pg).strip()
             if 'categories' in feature_dataset_row:
-                categories = feature_dataset_row['categories'].values[0]
+                cat = feature_dataset_row['categories'].values[0]
+                categories = '' if pd.isnull(cat) else str(cat).strip()
     
     if not data_found:
         if len_feature_datasets < 10:
@@ -1405,13 +2369,48 @@ for feature_dataset in feature_datasets:
         if title == "" or summary == "" or description == "" or title is None or summary is None or description is None:
             log_message(f"\tMissing title, summary or description.", 'error')
             continue
-    
+
+    # The PUBLISHED service name. Defaults to the SDE feature-class name (feature_name), but
+    # --CreateNewIfExisting can bump it to a free suffixed name below so a new service can coexist with an
+    # existing same-name one. feature_name itself stays the SDE feature class (data reference + ledger join).
+    service_name = (feature_name or '').replace(' ', '_')
+
+    # Existing-service guard: BEFORE building/publishing the service, check whether one of the same name
+    # already exists on the federated server (only relevant when we are actually publishing). Depending on the
+    # --OverrideExisting / --UseExisting / --CreateNewIfExisting flags and whether the existing service
+    # references the SAME SDE feature class, this either proceeds (overwrite), uses the existing service
+    # (records it as published and skips republishing), publishes a NEW suffixed service, or records a ledger
+    # error and skips the item. See resolve_existing_service_action.
+    if stageService and uploadToServer:
+        existing_action, new_service_name = resolve_existing_service_action(
+            feature_name, feature_dataset_DBpath, title)
+        if existing_action in ('error', 'use_existing'):
+            # 'error': recorded against the ledger row by log_message's funnel; 'use_existing': already
+            # recorded as published_to_portal. Either way there is nothing more to publish for this item.
+            continue
+        if existing_action == 'proceed' and override_existing:
+            # Force-regenerate any stale by-reference SD/draft from a PRIOR non-override run so the new SD is
+            # staged with overwriteExistingService=True baked in (the upload won't overwrite otherwise).
+            file_removed = remove_file(sddraft_output_filepath)
+            file_removed = remove_file(sd_output_filepath)
+        if existing_action == 'create_new' and new_service_name:
+            # Publish under the new free name. Re-point the SD/draft paths at it and drop any stale files so the
+            # draft we stage carries the NEW service name (a leftover draft would bake in the old name).
+            service_name = new_service_name
+            log_message(f"Publishing a NEW service '{service_name}' (referencing SDE feature class "
+                        f"'{feature_dataset_DBpath}') instead of overwriting the existing same-name service.",
+                        'info')
+            sddraft_output_filepath = os.path.join(sd_output_dir, f"{service_name}.sddraft")
+            sd_output_filepath = sddraft_output_filepath.replace('.sddraft', '.sd')
+            file_removed = remove_file(sddraft_output_filepath)
+            file_removed = remove_file(sd_output_filepath)
+
     errors = {}
     warnings = {}
     messages = {}
     total_warnings = 0
     if os.path.exists(sddraft_output_filepath):
-        log_message(f"Using existing Image Service Draft")
+        log_message(f"Using existing Service Draft", 'info')
     else:
         sddraft_result = {}
         try:
@@ -1425,9 +2424,9 @@ for feature_dataset in feature_datasets:
                 feature_name = feature_name.replace(" ", "_")
                 tags = tags.replace(" ", "_")
                 
-                # project_template_path = r"C:\MS\OneDrive - Example Organization, Inc\Documents\ArcGIS\ProjectTemplates\MapWithAllSDEDatabases.aptx"
+                # project_template_path = r"C:\MS\OneDrive - RRG Nature Based Solutions, Inc\Documents\ArcGIS\ProjectTemplates\MapWithAllSDEDatabases.aptx"
                 
-                temp_project_path = os.path.join(output_path, f"{feature_name}.aprx")
+                temp_project_path = os.path.join(sd_output_dir, f"{feature_name}.aprx")
                 if not os.path.exists(temp_project_path):
                     log_message(f"Creating temporary project from {project_template_path}", 'info')
                     aprx = arcpy.mp.ArcGISProject(project_template_path)
@@ -1456,7 +2455,23 @@ for feature_dataset in feature_datasets:
                 else:
                     log_message(f"Using existing map for {feature_name}", 'info')
                     temp_map = maps[0]
-                
+
+                # Strip any basemap layers. createMap() (and a template map) can carry a default basemap
+                # (e.g. "Topographic") whose tiled/online data source FAILS staging for a referenced service
+                # (Analyzer ERROR 24078 "Layer's data source is not supported"). The published referenced
+                # service only needs the operational feature layer, so remove basemaps before staging.
+                removed_basemaps = []
+                for _lyr in temp_map.listLayers():
+                    try:
+                        if getattr(_lyr, "isBasemapLayer", False):
+                            temp_map.removeLayer(_lyr)
+                            removed_basemaps.append(_lyr.name)
+                    except Exception as _bm_e:
+                        log_message(f"\t(could not inspect/remove a layer for basemap check: {_bm_e})", 'info')
+                if removed_basemaps:
+                    log_message(f"Removed basemap layer(s) before publishing: {removed_basemaps}", 'info')
+                    aprx.save()
+
                 map_cim = temp_map.getDefinition('V3')
                 if not map_cim.useServiceLayerIDs:
                     log_message(f"Allowing assignment of unique numeric IDs", 'info')
@@ -1464,24 +2479,40 @@ for feature_dataset in feature_datasets:
                     temp_map.setDefinition(map_cim)
                     aprx.save()
                 
-                # server_type="FEDERATED_SERVER"
-                log_message(f"Creating Feature Service Draft for {feature_name}", 'info')
-                sddraft = temp_map.getWebLayerSharingDraft(server_type="HOSTING_SERVER", 
-                                                           service_type="FEATURE", 
-                                                           service_name=feature_name)
-                
-                log_message(f"Setting Image Service Draft properties for {feature_name}", 'info')
-                sddraft.allowExporting = True
-                sddraft.checkUniqueIDAssignment = False
-                sddraft.description = description
-                sddraft.offline = True
-                sddraft.offlineTarget = 'ENTERPRISE_11'
-                sddraft.overwriteExistingService = False
+                # A REFERENCED feature service on a federated server is published as a MAP_IMAGE service
+                # BY REFERENCE (copyDataToServer=False) with Feature Access enabled -- this yields the
+                # MapServer + FeatureServer pair (plan decision #9). NOTE: service_type="FEATURE" is NOT
+                # valid with server_type="FEDERATED_SERVER" (arcpy validation_map allows FEATURE only on
+                # HOSTING_SERVER/MY_HOSTED_SERVICES), so MAP_IMAGE is the correct type here. Feature Access
+                # is switched on in finalize_sddraft() after export. By-reference works because RRGOrg is a
+                # registered data store -- no offline workaround / connection-string DOM injection needed.
+                log_message(f"Creating FEDERATED_SERVER MAP_IMAGE sharing draft (referenced) for {service_name}", 'info')
+                sddraft = temp_map.getWebLayerSharingDraft(server_type="FEDERATED_SERVER",
+                                                           service_type="MAP_IMAGE",
+                                                           service_name=service_name)
+                log_message(f"Setting sharing draft properties for {service_name}", 'info')
+                sddraft.federatedServerUrl = federated_server_url
+                sddraft.copyDataToServer = False     # by reference -- data stays in the registered RRGOrg SDE
+                # sddraft.allowExporting = True
+                # sddraft.checkUniqueIDAssignment = False
+                # sddraft.offline = True
+                # sddraft.offlineTarget = 'ENTERPRISE_11'
+                # Overwrite only when --OverrideExisting was requested (the existing-service guard above has
+                # already decided this item should overwrite). Otherwise stage a non-overwriting SD as before.
+                sddraft.overwriteExistingService = override_existing
                 sddraft.summary = summary
                 sddraft.tags = tags
-                
-                
-                log_message(f"Creating Image Service Draft for {feature_name}", 'info')
+                sddraft.description = description
+                try:
+                    sddraft.credits = credits
+                except Exception:
+                    pass
+                if arcgisServerFolderName:
+                    sddraft.serverFolder = arcgisServerFolderName   # REST folder (e.g. MaxEnt)
+                if arcgisPortalFolderName:
+                    sddraft.portalFolder = arcgisPortalFolderName   # blank -> portal ROOT (folder set at Phase 8 reassign)
+
+                log_message(f"Exporting sddraft for {feature_name}", 'info')
                 sddraft.exportToSDDraft(sddraft_output_filepath)
                 
                 '''
@@ -1496,15 +2527,15 @@ for feature_dataset in feature_datasets:
                                                     tags=tags)
                 '''
         except Exception as e:
-            errors = {f"Failed to create Image Service Draft for {feature_name}": str(e)}
-            log_message(f"Failed to create Image Service Draft: {e}", 'error')
+            errors = {f"Failed to create Service Draft for {feature_name}": str(e)}
+            log_message(f"Failed to create Service Draft: {e}", 'error')
         
         total_warnings = 0
         build_pyramids = False
         calculate_statistics = False
         
         if (sddraft_result and sddraft_result != {}) or errors != {}:
-            log_message('CreateImageSDDraft Errors, Warnings, and Messages', 'info')
+            log_message('CreateSDDraft Errors, Warnings, and Messages', 'info')
             
             if errors != {}:
                 # append errors from sddraft_result to errors
@@ -1533,7 +2564,7 @@ for feature_dataset in feature_datasets:
                 log_message("ERRORS:", 'error', errors)
                 continue
         else:
-            log_message(f"Created Image Service Draft for {feature_name}")
+            log_message(f"Created Service Draft for {feature_name}")
         '''
         if build_pyramids:
             log_message('Building pyramids', 'info')
@@ -1566,15 +2597,21 @@ for feature_dataset in feature_datasets:
         '''
     
     if os.path.exists(sddraft_output_filepath):
-        if not update_sddraft_dom(sddraft_output_filepath, feature_name, title, description, credits, is_shared_instance=feature_is_shared_instance, repository_id=repository_id):
+        # if not update_sddraft_dom(sddraft_output_filepath, feature_name, title, description, credits, is_shared_instance=feature_is_shared_instance, repository_id=repository_id):
+        # Enable Feature Access + set the instance provider; do NOT rewrite the by-reference/Databases
+        # blocks (arcpy already produced a correct referenced SD via copyDataToServer=False).
+        if not finalize_sddraft(sddraft_output_filepath, is_shared_instance=feature_is_shared_instance):
             continue
     else:
-        errors = {f"Failed to create Image Service Draft for {feature_name}": "No sddraft file found"}
-        log_message(f"Failed to create Image Service Draft for {feature_name}", 'error')
+        errors = {f"Failed to create Service Draft for {feature_name}": "No sddraft file found"}
+        log_message(f"Failed to create Service Draft for {feature_name}", 'error')
         continue
     
     if stageService:
         if (errors == {}) and (total_warnings == 0):
+            # Make sure the target Portal content folder exists (create it under the publishing user if
+            # missing) so PortalFolderName resolves and the item is not stranded in root.
+            ensure_portal_folder(arcgisPortalFolderName)
             if backup_sddraft_files:
                 # backup sddraft_output_filepath
                 backup_sddraft_output_filepath = sddraft_output_filepath.replace('.sddraft', '_backup_2.sddraft')
@@ -1589,32 +2626,126 @@ for feature_dataset in feature_datasets:
             service_staged = stage_service(sddraft_output_filepath, sd_output_filepath)
             if service_staged:
                 if uploadToServer:
+                    # Resolve the federated server URL the PORTAL uses to ADMINISTER the server. The
+                    # configured web-adaptor URL (federated_server_url) usually has administrative access
+                    # disabled, so arcpy's "check if service exists" fails with ERROR 002901 -- even though
+                    # the folder-creation step above reached the server admin fine via the portal federation.
+                    # gis.admin.servers.list()[0].url is that admin-capable URL (= Portal > Settings > Servers).
+                    upload_server = federated_server_url
                     try:
-                        log_message(f"Start Publishing Image Service from '{sd_output_filepath}' to '{federated_server_url}'", 'info')
-                        arcpy.UploadServiceDefinition_server(in_sd_file=sd_output_filepath,
-                                                             in_server=federated_server_url,
-                                                             in_service_name=feature_name,
-                                                             in_cluster="",
-                                                             in_folder_type="FROM_SERVICE_DEFINITION",
-                                                             in_folder="",
-                                                             in_startupType="STARTED",
-                                                             in_override="OVERRIDE_DEFINITION",
-                                                             in_my_contents="SHARE_ONLINE",
-                                                             in_public="PRIVATE",
-                                                             in_organization="NO_SHARE_ORGANIZATION",
-                                                             in_groups=None)
-                        log_message(f"Finished Publishing Image Service for {feature_name}")
-                        uploaded = True
+                        _fed = gis.admin.servers.list() if gis is not None else []
+                        _fed_url = (getattr(_fed[0], 'url', '') if _fed else '') or ''
+                        if _fed_url:
+                            upload_server = _fed_url
+                            # remove /admin from end of upload_server if it exists
+                            if upload_server.endswith('/admin'):
+                                upload_server = upload_server[:-6]
+                            log_message(f"Federated server URL (from portal federation): {upload_server}", 'info')
+                        else:
+                            log_message(f"Could not read federated server URL from portal; using configured '{federated_server_url}'.", 'info')
                     except Exception as e:
-                        log_message(f"Failed to upload service: {e}", 'error')
+                        log_message(f"Could not resolve federated server URL from portal (using '{federated_server_url}'): {e}", 'info')
+                    log_message(f"Start Publishing Service from '{sd_output_filepath}' to '{upload_server}'", 'info')
+                    log_message(f"\tarcpy.UploadServiceDefinition_server(", 'info')
+                    log_message(f"\t\tin_sd_file='{sd_output_filepath}',", 'info')
+                    log_message(f"\t\tin_server='{upload_server}',", 'info')
+                    log_message(f"\t\tin_service_name='{service_name}',", 'info')
+                    log_message(f"\t\tin_cluster='',", 'info')
+                    log_message(f"\t\tin_startupType='STARTED',", 'info')
+                    log_message(f"\t\tin_override='OVERRIDE_DEFINITION',", 'info')
+                    log_message(f"\t\tin_my_contents='SHARE_ONLINE',", 'info')
+                    log_message(f"\t\tin_public='PRIVATE',", 'info')
+                    log_message(f"\t\tin_organization='NO_SHARE_ORGANIZATION',", 'info')
+                    log_message(f"\t\tin_groups=None", 'info')
+
+                    if arcgisServerFolderName.strip() != '':
+                        log_message(f"\t\tin_folder_type='EXISTING',", 'info')
+                        log_message(f"\t\tin_folder='{arcgisServerFolderName}'", 'info')
+                        # if arcgisServerFolderName is not empty, try again with in_folder_type="EXISTING" and in_folder=arcgisServerFolderName
+                        try:
+                            log_message(f"Upload with in_folder_type='EXISTING' and in_folder='{arcgisServerFolderName}'", 'info')
+                            # arcpy.UploadServiceDefinition_server(in_sd_file=sd_output_filepath,
+                            arcpy.server.UploadServiceDefinition(in_sd_file=sd_output_filepath,
+                                                                    in_server=upload_server,
+                                                                    in_service_name=service_name,
+                                                                    in_folder_type="EXISTING",
+                                                                    in_folder=arcgisServerFolderName,
+                                                                    in_startupType="STARTED",
+                                                                    in_override="OVERRIDE_DEFINITION",
+                                                                    in_my_contents="SHARE_ONLINE",
+                                                                    in_public="PRIVATE",
+                                                                    in_organization="NO_SHARE_ORGANIZATION")
+                            log_message(f"Finished Publishing Service for {service_name}", 'info')
+                            uploaded = True
+                        except Exception as e:
+                            log_message(f"Failed to upload service with in_folder_type='EXISTING': {e}", 'info')
+                            # log traceback
+                            log_message(traceback.format_exc(), 'info')
+                    
+                    if (not uploaded):
+                        try:
+                            log_message(f"Retry upload with in_folder_type='FROM_SERVICE_DEFINITION'", 'info')
+                            # arcpy.UploadServiceDefinition_server(in_sd_file=sd_output_filepath,
+                            arcpy.server.UploadServiceDefinition(in_sd_file=sd_output_filepath,
+                                                                in_server=upload_server,
+                                                                in_service_name=service_name,
+                                                                in_folder_type="FROM_SERVICE_DEFINITION",
+                                                                in_startupType="STARTED",
+                                                                in_override="OVERRIDE_DEFINITION",
+                                                                in_my_contents="SHARE_ONLINE",
+                                                                in_public="PRIVATE",
+                                                                in_organization="NO_SHARE_ORGANIZATION")
+                            # in_cluster="", in_folder="", in_groups=None
+                            log_message(f"Finished Publishing Service for {service_name}")
+                            uploaded = True
+                        except Exception as e:
+                            # The 'error' log below is auto-recorded against this item's ledger row by
+                            # log_message -> _record_error_to_ledger (no explicit record_error needed here).
+                            log_message(f"Failed to upload service with in_folder_type='FROM_SERVICE_DEFINITION': {e}", 'error')
+                            # log traceback
+                            log_message(traceback.format_exc(), 'error')
+
                     
                     if uploaded == True:
-                        validate_and_update_portal_item(feature_name, title, portal_groups, categories)
+                        # Resolve the source AGOL item id first (ledger join) so the title/description
+                        # sync can pull the original description; then update both portal items.
+                        src_item_id, ent_item_id = record_published_to_ledger(feature_name, service_name)
+                        validate_and_update_portal_item(service_name, title, portal_groups, categories,
+                                                         src_item_id=src_item_id)
+                        # Post-publish (Step 6): apply the source AGOL item's renderer + pop-ups +
+                        # visibility range + default view to the new Enterprise item, and sync its Map
+                        # Image Layer. Best-effort -- a symbology failure must NOT fail the publish.
+                        # Requires Step 1 to have captured the source renderer; the source item id comes
+                        # from the ledger join above (dest_feature_class == feature_name).
+                        if apply_symbology and src_item_id and ent_item_id:
+                            try:
+                                log_message(f"Applying symbology/pop-ups to Enterprise item {ent_item_id} "
+                                            f"from source AGOL item {src_item_id}", 'info')
+                                # regen_thumbnail=False: the Enterprise thumbnail is set later by the
+                                # thumb_copy_portal pipeline stage (copy from the AGOL original, fallback
+                                # render), so the publish does NOT render it here.
+                                applied = apply_symbology(gis, ent_item_id, src_item_id,
+                                                          target_portal_url=portal_url,
+                                                          enterprise_portal_url=portal_url,
+                                                          regen_thumbnail=False)
+                                log_message(f"Symbology apply for {feature_name}: "
+                                            f"{'OK' if applied else 'skipped/failed -- see Step 6 log'}", 'info')
+                            except Exception as e:
+                                log_message(f"Symbology apply failed for {feature_name} "
+                                            f"(publish unaffected): {e}", 'error')
+                        elif apply_symbology:
+                            log_message(f"Symbology apply skipped for {feature_name}: no source/enterprise "
+                                        f"item id resolved from the ledger. Run Step 6 manually with the "
+                                        f"published item id.", 'info')
+                        else:
+                            log_message("Symbology apply skipped: migration_poc_step6_apply_symbology "
+                                        "not importable.", 'info')
                         if remove_sddraft_files:
-                            remove_file(sddraft_output_filepath)
-                        
+                            file_removed = remove_file(sddraft_output_filepath)
+                            file_removed = remove_file(os.path.join(sd_output_dir, f"{feature_name}.aprx"))
+                            
                         if remove_sd_files:
-                            remove_file(sd_output_filepath)
+                            file_removed = remove_file(sd_output_filepath)
                 else:
                     log_message(f"Service Definition file created: {sd_output_filepath}")
     else:

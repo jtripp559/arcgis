@@ -22,13 +22,8 @@ import requests
 import keyring
 import argparse
 from pathlib import Path
-try:
-    from dotenv import load_dotenv, find_dotenv
-    load_dotenv(find_dotenv())
-except ImportError:
-    pass
 
-def get_credentials(credential_name="org_powerautomate_gisemail"):
+def get_credentials(credential_name="nbs_powerautomate_gisemail"):
     """
     Retrieve credentials from Windows Credential Manager.
     
@@ -63,9 +58,7 @@ def build_endpoint_url(username, password):
     Returns:
         str: Complete endpoint URL
     """
-    base_url = os.getenv("POWERAUTOMATE_BASE_URL", "").rstrip("/")
-    if not base_url:
-        raise ValueError("POWERAUTOMATE_BASE_URL is not set. Add it to your .env file.")
+    base_url = "https://default80c72868a48a4761ad27961aface6e.ef.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows"
     return f"{base_url}/{username}/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig={password}"
 
 def read_file_content(file_path):
@@ -134,7 +127,7 @@ def send_to_powerautomate(content, subject=None, filename=None, endpoint_url=Non
             print(f"Response text: {e.response.text}")
         return False
 
-def send_email(content, subject=None, filename=None, credential_name="org_powerautomate_gisemail"):
+def send_email(content, subject=None, filename=None, credential_name="nbs_powerautomate_gisemail"):
     # Get credentials from Windows Credential Manager
     print(f"Retrieving credentials from Windows Credential Manager: '{credential_name}'")
     username, password = get_credentials(credential_name)
@@ -190,8 +183,8 @@ def main():
     parser.add_argument(
         "--credential",
         "-c",
-        default="org_powerautomate_gisemail",
-        help="Windows Credential Manager credential name (default: 'org_powerautomate_gisemail')"
+        default="nbs_powerautomate_gisemail",
+        help="Windows Credential Manager credential name (default: 'nbs_powerautomate_gisemail')"
     )
     
     args = parser.parse_args()

@@ -14,10 +14,10 @@ from datetime import datetime
 prereq_test_only = True
 backup_db = False
 disconnect_users = True
-Connection_File_Name_full_path = r"C:\Admin\Tools\Connections\ENT_DB3_dbadmin.sde"
+Connection_File_Name_full_path = r"C:\Admin\Tools\Connections\RRG_TestEnterprise_rrggis.sde"
 
 
-backup_full_path = r"D:\GenericArcGISDataDir\Systems\Backups\ENT_DB3_backup_" + datetime.now().strftime("%Y%m%d") + ".xml"
+backup_full_path = r"T:\ArcGISDataset\Systems\Backups\RRG_TestEnterprise_backup_" + datetime.now().strftime("%Y%m%d") + ".xml"
 
 def disconnect_users(connection_file):
     current_users = arcpy.ListUsers(connection_file)

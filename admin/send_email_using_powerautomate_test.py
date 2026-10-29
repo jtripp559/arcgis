@@ -5,7 +5,7 @@ import importlib
 import os
 
 # Remove the module from sys.modules if already loaded, then re-import
-mods = [r'D:\GenericScriptsDir\send_email_using_powerautomate']
+mods = [r'T:\ArcGISDataset\Data Science Scripts\Source Controlled\gis_general\Scripts\ArcGIS Admin\send_email_using_powerautomate']
 for path in mods:
     sys.path.append(path)
 module_name = "send_email_using_powerautomate"

@@ -1,31 +1,31 @@
 /*
-	- Run as user: dbadmin
+	- Run as user: rrggis
 	- Do not forget to change the password: MYPASSWORD
 */
-/* USE [ORG_WS]
+/* USE [NBS_WS]
 GO
-CREATE SCHEMA [specific_user_name];
+CREATE SCHEMA [cacao];
 GO
-GRANT SELECT                            ON SCHEMA::specific_user_name TO [data viewer];
-GRANT SELECT, INSERT, UPDATE, DELETE, ALTER, EXECUTE, REFERENCES, VIEW DEFINITION    ON SCHEMA::specific_user_name TO [data editor];
-GRANT SELECT, INSERT, UPDATE, DELETE, ALTER, EXECUTE, REFERENCES, VIEW DEFINITION    ON SCHEMA::specific_user_name TO [data creator];
+GRANT SELECT                            ON SCHEMA::cacao TO [data viewer];
+GRANT SELECT, INSERT, UPDATE, DELETE, ALTER, EXECUTE, REFERENCES, VIEW DEFINITION    ON SCHEMA::cacao TO [data editor];
+GRANT SELECT, INSERT, UPDATE, DELETE, ALTER, EXECUTE, REFERENCES, VIEW DEFINITION    ON SCHEMA::cacao TO [data creator];
 GO
 
 USE [master]
 GO
-CREATE LOGIN [specific_user_name] WITH PASSWORD=N'MYPASSWORD', DEFAULT_DATABASE=[ORG_WS], DEFAULT_LANGUAGE=[us_english], CHECK_EXPIRATION=OFF, CHECK_POLICY=ON
+CREATE LOGIN [cacao] WITH PASSWORD=N'MYPASSWORD', DEFAULT_DATABASE=[NBS_WS], DEFAULT_LANGUAGE=[us_english], CHECK_EXPIRATION=OFF, CHECK_POLICY=ON
 GO
 
-USE [ORG_WS]
+USE [NBS_WS]
 GO
-CREATE USER [specific_user_name] FOR LOGIN [specific_user_name] WITH DEFAULT_SCHEMA=[specific_user_name]
+CREATE USER [cacao] FOR LOGIN [cacao] WITH DEFAULT_SCHEMA=[cacao]
 GO
-USE [ORG_WS]
+USE [NBS_WS]
 GO
-ALTER ROLE [data creator] ADD MEMBER [specific_user_name]
+ALTER ROLE [data creator] ADD MEMBER [cacao]
 GO
 
-ALTER AUTHORIZATION ON SCHEMA::specific_user_name TO specific_user_name;
+ALTER AUTHORIZATION ON SCHEMA::cacao TO cacao;
 GO
 
 
@@ -48,17 +48,17 @@ GO
   
   Usage notes:
   - If you run this file directly with sqlcmd you can set variables with -v, e.g.
-	sqlcmd -S servername -i CreateDBSchema.sql -v DBName="ORG_WS" SchemaName="general" Password="MySecret"
+	sqlcmd -S servername -i CreateDBSchema.sql -v DBName="NBS_WS" SchemaName="general" Password="MySecret"
 
   Variables:
-	$(DBName)      - target database name (default: ORG_WS)
+	$(DBName)      - target database name (default: NBS_WS)
 	$(SchemaName)  - schema name (default: general)
 	$(UserPassword)    - password for new login
 */
 
 SET NOCOUNT ON;
 
-DECLARE @DBName sysname = N'ORG_DB2';
+DECLARE @DBName sysname = N'NBS_MaxEnt';
 DECLARE @SchemaName sysname = N'general';
 DECLARE @UserPassword nvarchar(256) = N'';
 

@@ -1,7 +1,7 @@
 # DirectoryCompare.py
 #
 # Created by: Julie Tripp
-#
+#               julie.tripp@rrgnbs.com
 #               03/13/2024
 # Description: This script compares two directories and writes the differences to a file.
 #

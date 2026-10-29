@@ -3,12 +3,39 @@ import json
 import requests
 import logging
 
+def get_user_input(prompt, default_value='', value_to_check=''):
+    if value_to_check != '' and not value_to_check is None:
+        return value_to_check
+    
+    input_prompt = prompt
+    # if input_prompt does not begin with a tab
+    if not input_prompt.startswith('\t'):
+        input_prompt = '**  ' + input_prompt
+    if default_value != '':
+        input_prompt += f" (Press enter to default to '{default_value}')"
+    
+    try:
+        user_input = input(f"{input_prompt}: ")
+        user_input = user_input.strip()
+        if user_input == '' or user_input is None:
+            user_input = default_value
+    except EOFError:
+        # Handle EOF error by using default value
+        print(f"No input detected, using default value: {default_value}")
+        user_input = default_value
+    except KeyboardInterrupt:
+        print("\nScript interrupted by user")
+        exit(0)
+    
+    # log_message(f"{prompt}: {user_input}")
+    return user_input
+
+
 # gis = None
 
-arcgis_url = 'https://myorg.maps.arcgis.com'
 token = None
-# arcgis_username = 'gisadmin'
-arcgis_username = 'gisuser'
+arcgis_url = get_user_input("ArcGIS URL", default_value='https://rrg.maps.arcgis.com')
+arcgis_username = get_user_input(f"ArcGIS Username (not SSO) for {arcgis_url}", default_value='rrgadmin')
 arcgis_password = None
 
 # Set up logging
@@ -44,7 +71,7 @@ def get_arcgis_token():
     if token != '' and token is not None:
         return token
     # username = input("Portal Username: ")
-    arcgis_username = get_user_input("ArcGIS Username", default_value='gisadmin', value_to_check=arcgis_username)
+    arcgis_username = get_user_input("ArcGIS Username", default_value='rrgadmin', value_to_check=arcgis_username)
     if arcgis_username == '':
         print("Username is required")
         return token

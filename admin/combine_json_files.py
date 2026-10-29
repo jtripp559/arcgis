@@ -241,8 +241,8 @@ def create_flattened_csv(combined_data, output_path):
 
 def main():
     # File paths
-    base_path = r"D:\GenericScriptsDir\Output"
-    portal_file = os.path.join(base_path, "ORG", "ArcGIS_Items_ORG_20250905171728_gis_items.json")
+    base_path = r"c:\Develop\GIS\gis_general\Scripts\ArcGIS Admin\Output"
+    portal_file = os.path.join(base_path, "NBS", "ArcGIS_Items_NBS_20250905171728_gis_items.json")
     agol_file = os.path.join(base_path, "AGOL", "ArcGIS_Items_AGOL_20250908101638_gis_items.json")
     
     # Output paths

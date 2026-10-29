@@ -5,14 +5,10 @@ from datetime import datetime
 from tqdm import tqdm
 import pandas as pd
 from pprint import pprint
-try:
-    from dotenv import load_dotenv, find_dotenv
-    load_dotenv(find_dotenv())
-except ImportError:
-    pass
 
 # Directory to search for manifest.xml files
-base_dir = os.getenv("MANIFEST_BASE_DIR", "")
+# base_dir = r"C:\MS\OneDrive - RRG Nature Based Solutions, Inc\SharePoint - NBS - GIS and IT\GIS\GIS Projects\Migrate ArcGIS\data\arcgisinput"
+base_dir = r"\\192.168.4.243\c$\arcgisserver\directories\arcgissystem\arcgisinput"
 if not os.path.exists(base_dir):
     script_dir = os.path.dirname(os.path.abspath(__file__))
     base_dir = os.path.join(script_dir, 'Input')
@@ -20,7 +16,7 @@ if not os.path.exists(base_dir):
         os.makedirs(base_dir)
 
 # output_filename_base = 'ArcGIS_Manifest_Test'
-output_filename_base = 'ArcGIS_Manifest_ENT'
+output_filename_base = 'ArcGIS_Manifest_RRG'
 
 
 timestamp = datetime.now().strftime('%Y%m%d%H%M%S')

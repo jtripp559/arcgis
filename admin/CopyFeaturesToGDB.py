@@ -2,13 +2,15 @@
 # CopyFeaturesToGDB.py
 #
 # Developed by: Julie Tripp
-#
+#               julie.tripp@rrgnbs.com
 # Date:  04/04/2025
 #
 # Description: This script copies features from ArcGIS Feature Services to a local SDE geodatabase.
 #
 # CSV file format:
 # feature_service_url,database_owner_name,feature_name,workspace_full_path
+# Example CSV file:
+# https://services.arcgis.com/P8Cok4qAP1sTVE59/ArcGIS/rest/services/ZonasAgroclimaticasCacaoV1/FeatureServer/0,SDE,Cacao_Impact_Gradient_2050s,T:\ArcGISDataset\Enterprise\Connections\NBS_WS_sde.sde
 #
 # Script execution options:
 # 1. Run the script from the command line with the following command:
@@ -36,15 +38,15 @@ import csv
 
 gis = None
 
-# workspace_full_path = r"D:\GenericArcGISConnectionsDir\ORG_DB5_sde.sde"
+# workspace_full_path = r"T:\ArcGISDataset\Enterprise\Connections\NBS_WS_sde.sde"
 workspace_full_path = ''
 
 workspace_paths = {
-    'W': r"D:\GenericArcGISConnectionsDir\ORG_DB5_sde.sde",
-    'M': r"D:\GenericArcGISConnectionsDir\ORG_DB2_sde.sde",
-    'B': r"D:\GenericArcGISConnectionsDir\ORG_Generic_sde.sde",
-    'G': r"D:\GenericArcGISConnectionsDir\ORG_DB4_sde.sde",
-    'C': r"D:\GenericArcGISConnectionsDir\ORG_DB1_sde.sde"
+    'W': r"T:\ArcGISDataset\Enterprise\Connections\NBS_WS_sde.sde",
+    'M': r"T:\ArcGISDataset\Enterprise\Connections\NBS_MaxEnt_sde.sde",
+    'B': r"T:\ArcGISDataset\Enterprise\Connections\NBS_WaterBalance_sde.sde",
+    'G': r"T:\ArcGISDataset\Enterprise\Connections\NBS_Gen_Ref_sde.sde",
+    'C': r"T:\ArcGISDataset\Enterprise\Connections\NBS_ClimateSimilarity_sde.sde"
 }
 
 '''
@@ -115,35 +117,35 @@ def connect_to_arcgis():
     connected = False
 
     # ArcGIS Online
-    arcgis_url_agol = 'https://myorg.maps.arcgis.com'
+    arcgis_url_agol = 'https://rrg.maps.arcgis.com'
     # base_url_agol = 'https://services.arcgis.com/cb1XtHtD3d6ZWNAQ/arcgis/rest/services'
     # Old ArcGIS Enterprise
-    arcgis_url_ent = 'https://gis2.example.com/portal'
-    # base_url_ent = 'https://gis2.example.com/server/rest/services'
+    arcgis_url_rrg = 'https://gis.renewablegroup.com/portal'
+    # base_url_rrg = 'https://gis.renewablegroup.com/server/rest/services'
     # New ArcGIS Enterprise
-    arcgis_url_org = 'https://gis.example.com/arcgisportal'
-    # base_url_org = 'https://gis.example.com/arcgisserver/rest/services/'
+    arcgis_url_nbs = 'https://maps.rrgnbs.com/arcgisportal'
+    # base_url_nbs = 'https://maps.rrgnbs.com/arcgisserver/rest/services/'
     
-    which_portal = get_user_input("Which ArcGIS portal (AGOL, ENT, ORG)", default_value='ORG')
+    which_portal = get_user_input("Which ArcGIS portal (AGOL, RRG, NBS)", default_value='NBS')
     which_portal = which_portal.upper()
     if which_portal.startswith('A'):
         arcgis_url = arcgis_url_agol
         # base_url = base_url_agol
         # selected_portal = 'AGOL'
     elif which_portal.startswith('R'):
-        arcgis_url = arcgis_url_ent
-        # base_url = base_url_ent
-        # selected_portal = 'ENT'
+        arcgis_url = arcgis_url_rrg
+        # base_url = base_url_rrg
+        # selected_portal = 'RRG'
     else:
-        arcgis_url = arcgis_url_org
-        # base_url = base_url_org
-        # selected_portal = 'ORG'
+        arcgis_url = arcgis_url_nbs
+        # base_url = base_url_nbs
+        # selected_portal = 'NBS'
     
-    # # Get ArcGIS URL from the user or default to 'https://gis.example.com/arcgisportal'
+    # # Get ArcGIS URL from the user or default to 'https://maps.rrgnbs.com/arcgisportal'
     # arcgis_url = get_user_input("ArcGIS URL", default_value=arcgis_url)
     
     # Get arcgis_username and password from the user
-    arcgis_username = get_user_input("ArcGIS Username (not SSO)", default_value='gisadmin')
+    arcgis_username = get_user_input("ArcGIS Username (not SSO)", default_value='rrgadmin')
     arcgis_password = getpass.getpass(f"**  ArcGIS Password for {arcgis_username}: ")
     if arcgis_username == "" or arcgis_password == "":
         log_message("Missing username or password.", 'error')
@@ -187,7 +189,7 @@ def init_arcpy(workspace_path=None):
             workspace_full_path = workspace_path
             
         # Set the workspace environment
-        arcpy.env.mask = r"D:\GenericArcGISDataDir\GIS\General GIS Data\Worldwide\World.shp"
+        arcpy.env.mask = r"T:\ArcGISDataset\GIS\General GIS Data\Worldwide\World.shp"
         arcpy.env.cellSize = "MINOF"
         arcpy.env.overwriteOutput = True
         arcpy.env.workspace = workspace_full_path
@@ -702,7 +704,7 @@ def query_in_chunks(feature_layer, chunk_size=1000, feature_table_name=None):
         feature_table_name = remove_non_ascii(feature_layer.properties['name'], replace_spaces=True)
         feature_table_name = feature_table_name.upper()
         if not feature_table_name[0].isalpha():
-            feature_table_name = 'ORG_' + feature_table_name
+            feature_table_name = 'NBS_' + feature_table_name
         if not feature_table_name.startswith('SDE.'):
             feature_table_name = 'SDE.' + feature_table_name
         if len(feature_table_name) > 128:

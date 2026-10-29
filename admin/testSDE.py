@@ -26,7 +26,7 @@ if failure:
     print('Attempting to connect using the sde connection string...')
     # Test the connection
     try:
-        sde_conn = arcpy.ArcSDESQLExecute(server="ORG-APP1", instance="ORG-APP1\\frutsql01", database=database, user="sde", password=password)
+        sde_conn = arcpy.ArcSDESQLExecute(server="NBS-APP1", instance="NBS-APP1\\frutsql01", database=database, user="sde", password=password)
         failure = False
     # except Exception as e:
     except arcpy.ExecuteError:

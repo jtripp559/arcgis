@@ -3,9 +3,36 @@ import logging
 import getpass
 import sys
 
+def get_user_input(prompt, default_value='', value_to_check=''):
+    if value_to_check != '' and not value_to_check is None:
+        return value_to_check
+    
+    input_prompt = prompt
+    # if input_prompt does not begin with a tab
+    if not input_prompt.startswith('\t'):
+        input_prompt = '**  ' + input_prompt
+    if default_value != '':
+        input_prompt += f" (Press enter to default to '{default_value}')"
+    
+    try:
+        user_input = input(f"{input_prompt}: ")
+        user_input = user_input.strip()
+        if user_input == '' or user_input is None:
+            user_input = default_value
+    except EOFError:
+        # Handle EOF error by using default value
+        print(f"No input detected, using default value: {default_value}")
+        user_input = default_value
+    except KeyboardInterrupt:
+        print("\nScript interrupted by user")
+        exit(0)
+    
+    # log_message(f"{prompt}: {user_input}")
+    return user_input
 
-arcgis_url = 'https://myorg.maps.arcgis.com'
-arcgis_username = input("ArcGIS Username (not SSO): ").strip()
+
+arcgis_url = get_user_input("ArcGIS URL", default_value='https://rrg.maps.arcgis.com')
+arcgis_username = get_user_input(f"ArcGIS Username (not SSO) for {arcgis_url}", default_value='rrgadmin')
 arcgis_password = getpass.getpass(f"**  ArcGIS Password for {arcgis_username}: ")
 try:
     gis = GIS(arcgis_url, arcgis_username, arcgis_password)
@@ -107,7 +134,7 @@ old_new_id_dictionary = {
     "c012016c10d8466f8f60d0f3f09ed9d8": "ffc478014e1c4b599c045a14ac25c84e",
     "d8d040db37834d8eb4fe8f6196c4b18f": "66187e7dc4a94f45a33f652247e570ed"}
 
-ORG_Org_Group_ID = 0
+NBS_Org_Group_ID = 0
 GIS_Dev_Group_ID = 0
 
 
@@ -142,7 +169,7 @@ def copy_details(old_item_id, new_item_id):
         old_item = gis.content.get(old_item_id)
         new_item = gis.content.get(new_item_id)
         update_dict = {
-            "title": f'{old_item.title} - ORG', 
+            "title": f'{old_item.title} - NBS', 
             "snippet": old_item.snippet, 
             "description": old_item.description,
             "tags": old_item.tags
@@ -222,7 +249,7 @@ def change_item_groups(new_item_id, group_ids, owner, owner_folder_id): # portal
             log_message(f"No item found with ID '{new_item_id}'.", level='warning')
             return
         
-        new_item.unshare(groups=[ORG_Org_Group_ID])
+        new_item.unshare(groups=[NBS_Org_Group_ID])
         
         # set the new item's owner to the old item's owner
         folder_name = get_user_folder_title(owner, owner_folder_id)
@@ -274,9 +301,9 @@ def copy_old_groups_to_new():
             
             # old_item.unshare(groups=old_group_ids)
                 
-            # if ORG_Org_Group_ID not in old_group_ids: add it
-            if ORG_Org_Group_ID not in old_group_ids:
-                old_group_ids.append(ORG_Org_Group_ID)
+            # if NBS_Org_Group_ID not in old_group_ids: add it
+            if NBS_Org_Group_ID not in old_group_ids:
+                old_group_ids.append(NBS_Org_Group_ID)
             
             old_owner = old_item.owner
             old_folder_id = old_item.ownerFolder
@@ -290,8 +317,8 @@ def copy_old_groups_to_new():
 # 4) Finally, run the function to process all items
 # --------------------------------------------------------------------
 '''
-ORG_Org_Group_ID = get_group_id_from_title("Example Organization Organization (Internal)")
-print(f"ORG_Org_Group_ID: {ORG_Org_Group_ID}")
+NBS_Org_Group_ID = get_group_id_from_title("RRG Nature Based Solutions Organization (Internal)")
+print(f"NBS_Org_Group_ID: {NBS_Org_Group_ID}")
 
 GIS_Dev_Group_ID = get_group_id_from_title("GIS Development")
 

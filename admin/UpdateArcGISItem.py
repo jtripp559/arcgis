@@ -1,7 +1,7 @@
 # UpdateArcGISItem.py
 #
 # Developed by: Julie Tripp
-#
+#               julie.tripp@rrgnbs.com
 # Date:  06/05/2024
 #
 # Description: This script publishes raster datasets as image services to an ArcGIS Enterprise portal.
@@ -33,16 +33,16 @@
 # User Prompts (if empty/missing from .env file or command line argument):
 # 2. ArcPy Environment Prompts:
 #   - Workspace type (Options: FileGDB or SDE) - Default to SDE
-#   - Full path to the workspace (e.g. D:\GenericArcGISConnectionsDir\ORG_DB5_sde.sde)
-#   - Name for the database in Server Manager (e.g. sde.DEFAULT (ORG-APP1), GenericProj1_Datastore.gdb, dbo.DEFAULT (ORG-APP1)
+#   - Full path to the workspace (e.g. T:\ArcGISDataset\Enterprise\Connections\NBS_WS_sde.sde)
+#   - Name for the database in Server Manager (e.g. sde.DEFAULT (NBS-APP1), Beisa_Datastore.gdb, dbo.DEFAULT (NBS-APP1)
 #       - TIP: This is the name that will be displayed when you click on the "service" icon.
 #               If you're not sure what this should be, but you know of another service that you published from Pro directly, 
 #               then you can find it in the SVCManifest > Databases > SVCDatabase > Name tag of the manifest.xml file in the
-#               extracted directory of the \\org-app2\c$\arcgisserver\directories\arcgissystem\arcgisinput directory for that service.
-#           E.g. \\org-app2\c$\arcgisserver\directories\arcgissystem\arcgisinput\AnnualDepthToGroundwater_BasinATLAS_lev09.MapServer\extracted\
+#               extracted directory of the \\nbs-app2\c$\arcgisserver\directories\arcgissystem\arcgisinput directory for that service.
+#           E.g. \\nbs-app2\c$\arcgisserver\directories\arcgissystem\arcgisinput\AnnualDepthToGroundwater_BasinATLAS_lev09.MapServer\extracted\
 # 3. Portal Connection Prompts:
-#   - Federated Server URL - Default to 'https://gis.example.com/arcgisserver'
-#   - Portal URL - Default to 'https://gis.example.com/arcgisportal'
+#   - Federated Server URL - Default to 'https://maps.rrgnbs.com/arcgisserver'
+#   - Portal URL - Default to 'https://maps.rrgnbs.com/arcgisportal'
 #   - Portal Username - Cannot be SSO enabled
 #   - Portal Password
 # 4. Raster Dataset Prompts:
@@ -51,9 +51,9 @@
 #     - If "N", name of the raster dataset(s) separated by commas (e.g. ActualEvapotranspiration2021_SSEBop, NDVI2021_SSEBop)
 #        - If no raster names entered, confirm to use all raster datasets in the workspace
 # 5. Database and Database Owner Name Prompts (conditional, if not a FileGDB workspace )
-#   - "Database Name (e.g. ORG-APP1):"
+#   - "Database Name (e.g. NBS-APP1):"
 #   - "Database Owner Name (e.g. dbo):"
-#   - Prepended to the raster dataset name to create the full dataset name (e.g. ORG-APP1.dbo.ActualEvapotranspiration2021_SSEBop)
+#   - Prepended to the raster dataset name to create the full dataset name (e.g. NBS-APP1.dbo.ActualEvapotranspiration2021_SSEBop)
 # # 6. Shared Instance - Default to Y
 # 7. Portal and Server Folder Prompts (optional)
 # 9. Missing Data Prompts (Conditional, if missing data in raster dataset)
@@ -126,8 +126,8 @@ portal_group_dict = {}
 # All of the following variables can be set in the .env file
 recycleStartHour = 20   # must be between 0 and 23
 recycleStartMin = 0 # must be a multiple of 15, up to 45
-portal_url = '' # 'https://gis.example.com/arcgisportal'
-# server_connection_file_path = r"D:\GenericArcGISConnectionsDir\ORG_arcgisserver_server_connection.ags"
+portal_url = '' # 'https://maps.rrgnbs.com/arcgisportal'
+# server_connection_file_path = r"T:\ArcGISDataset\Enterprise\Connections\NBS_arcgisserver_server_connection.ags"
 portal_username = ''
 workspace_type = ""
 workspace_factory = ""
@@ -361,11 +361,11 @@ def connect_to_portal():
     global portal_url, gis, portal_username
     connected = False
     
-    # Get portal URL from the user or default to 'https://gis.example.com/arcgisportal'
-    portal_url = get_user_input("ArcGIS portal URL", default_value='https://gis.example.com/arcgisportal', value_to_check=portal_url)
+    # Get portal URL from the user or default to 'https://maps.rrgnbs.com/arcgisportal'
+    portal_url = get_user_input("ArcGIS portal URL", default_value='https://maps.rrgnbs.com/arcgisportal', value_to_check=portal_url)
     
     # Get portal_username and password from the user
-    portal_username = get_user_input("ArcGIS Portal Username (not SSO)", default_value='gisadmin', value_to_check=portal_username)
+    portal_username = get_user_input("ArcGIS Portal Username (not SSO)", default_value='rrgadmin', value_to_check=portal_username)
     portal_password = getpass.getpass(f"**  ArcGIS Portal Password for {portal_username}: ")
     if portal_username == "" or portal_password == "":
         log_message("Missing portal username or password.", 'error')
@@ -633,7 +633,7 @@ else:
     else:
         is_shared_instance = False    
 # get portal and server folder names to publish to from the user
-arcgisPortalFolderName = get_user_input("ArcGIS Portal folder name, e.g. 'ENT_Enterprise' (or press enter to publish to root)", value_to_check=arcgisPortalFolderName)
+arcgisPortalFolderName = get_user_input("ArcGIS Portal folder name, e.g. 'RRG_Enterprise' (or press enter to publish to root)", value_to_check=arcgisPortalFolderName)
 '''
 
 # cycle through all datasets in arcgis_items

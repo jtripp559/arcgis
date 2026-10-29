@@ -3,13 +3,13 @@ import traceback
 import getpass
 
 # Define the path to your AOI feature class and output geodatabase
-workspace_full_path = r"D:\GenericArcGISConnectionsDir\ORG_Generic_sde.sde"
-aoi_feature_class = f"{workspace_full_path}/SDE.ENT_L0BASINATLAS_V10_LEV09"
-portal_url="https://gis.example.com/arcgisportal"
+workspace_full_path = r"T:\ArcGISDataset\Enterprise\Connections\NBS_WaterBalance_sde.sde"
+aoi_feature_class = f"{workspace_full_path}/SDE.RRG_L0BASINATLAS_V10_LEV09"
+portal_url="https://maps.rrgnbs.com/arcgisportal"
 
 # Define the input parameters
 # input_raster = "https://worldpop.arcgis.com/arcgis/rest/services/WorldPop_Total_Population_100m/ImageServer"
-input_raster = r"D:\GenericArcGISDataDir\WorldPop\1km\ppp_2020_1km_Aggregated.tif"
+input_raster = r"T:\ArcGISDataset\Rasters\WorldPop\1km\ppp_2020_1km_Aggregated.tif"
 # point_feature_class = f"{workspace_full_path}/sde.WorldPopTotPop100m2000_2020"
 point_feature_class = f"{workspace_full_path}/sde.WorldPopTotPop1km2020Pts"
 raster_field = "Value"
@@ -45,12 +45,12 @@ def connect_to_portal():
      #global portal_url, portal_username, gis
     connected = False
     
-    # Get portal URL from the user or default to 'https://gis.example.com/arcgisportal'
-     #portal_url = get_user_input("ArcGIS portal URL", default_value='https://gis.example.com/arcgisportal', value_to_check=portal_url)
+    # Get portal URL from the user or default to 'https://maps.rrgnbs.com/arcgisportal'
+     #portal_url = get_user_input("ArcGIS portal URL", default_value='https://maps.rrgnbs.com/arcgisportal', value_to_check=portal_url)
     
     # Get portal_username and password from the user
-    # portal_username = get_user_input("ArcGIS Portal Username (not SSO)", default_value='gisadmin', value_to_check=portal_username)
-    portal_username = 'gisadmin'
+    # portal_username = get_user_input("ArcGIS Portal Username (not SSO)", default_value='rrgadmin', value_to_check=portal_username)
+    portal_username = 'rrgadmin'
     portal_password = getpass.getpass(f"**  ArcGIS Portal Password for {portal_username}: ")
     if portal_username == "" or portal_password == "":
         print("Missing portal username or password.")

@@ -1,13 +1,38 @@
 import arcpy
 import getpass
 
-db_admin_username = "dbadmin"
+db_admin_username = "rrggis"
 sde_username = "sde"
-db_instance = r"ORG-APP1\frutsql01"
-output_dir = r"D:\GenericArcGISConnectionsDir"
+db_instance = r"NBS-APP1\frutsql01"
+output_dir = r"T:\ArcGISDataset\Enterprise\Connections"
 
 db_acct_auth = "DATABASE_AUTH"
 db_platform = "SQL_SERVER"
+
+# Database-level privileges to grant per role: {role_name: [privilege, ...]}.
+# Add more roles here in the future (e.g. "data editor", "data viewer") with their own privilege
+# lists and they will be granted automatically. These are all database-scoped permissions in SQL
+# Server; each is run as its own GRANT statement (no GO -- that is an SSMS batch separator, not
+# T-SQL). GRANT is idempotent, so re-running is harmless. For now only [data creator] is granted;
+# data editor / data viewer are intentionally left as-is.
+ROLE_DB_PRIVILEGES = {
+    "data creator": [
+        "ALTER",
+        "CREATE PROCEDURE",
+        "CREATE SYNONYM",
+        "CREATE TABLE",
+        "CREATE VIEW",
+        "DELETE",
+        "EXECUTE",
+        "INSERT",
+        "REFERENCES",
+        "SELECT",
+        "UPDATE",
+        "VIEW DEFINITION",
+    ],
+    # "data editor": ["SELECT", "INSERT", "UPDATE", "DELETE", "EXECUTE", "VIEW DEFINITION"],
+    # "data viewer": ["SELECT", "VIEW DEFINITION"],
+}
 
 def create_geodatabase():
     db_created = False
@@ -23,7 +48,7 @@ def create_geodatabase():
             gdb_admin_name=sde_username, 
             gdb_admin_password=gdb_pw, 
             tablespace_name="", 
-            authorization_file=r"\\org-app2\c$\Program Files\esri\License11.5\sysgen\keycodes", 
+            authorization_file=r"\\nbs-app2\c$\Program Files\esri\License11.5\sysgen\keycodes", 
             spatial_type="")
         print(out_result)
         db_created = True
@@ -102,6 +127,35 @@ def create_roles(sde_conn_file):
             print(f"An unexpected error occurred creating role: {role}")
             print(str(e))
 
+def grant_role_privileges(sde_conn_file):
+    # Grant the database-level privileges in ROLE_DB_PRIVILEGES to each configured role.
+    # Runs over the db-admin (rrggis) connection, which has authority to GRANT. Each role must
+    # already exist (created by create_roles). Each statement is executed separately.
+    if not sde_conn_file:
+        print("No connection file provided for granting privileges.")
+        return
+    if not ROLE_DB_PRIVILEGES:
+        print("No roles configured in ROLE_DB_PRIVILEGES; skipping grants.")
+        return
+    try:
+        sde_conn = arcpy.ArcSDESQLExecute(sde_conn_file)
+    except Exception as e:
+        print(f"Failed to open a SQL connection for grants: {e}")
+        return
+    for role, privileges in ROLE_DB_PRIVILEGES.items():
+        print(f"\nGranting database privileges to [{role}]...")
+        granted = 0
+        for priv in privileges:
+            sql = f"GRANT {priv} TO [{role}];"
+            try:
+                sde_conn.execute(sql)
+                granted += 1
+                print(f"  GRANT {priv} TO [{role}]")
+            except Exception as e:
+                print(f"  Failed: GRANT {priv} TO [{role}] -> {e}")
+        print(f"Granted {granted}/{len(privileges)} privileges to [{role}].")
+
+
 print(f"This script will create a geodatabase on the SQL Server instance: {db_instance}")
 
 db_name = input("Enter new database name: ")
@@ -117,5 +171,8 @@ print("\nCreating geodatabase and SDE connection files...")
 admin_conn_file = create_db_connection(return_conn_username=db_admin_username)
 print("\nCreating database roles...")
 create_roles(admin_conn_file)
+
+print("\nGranting database privileges to configured roles...")
+grant_role_privileges(admin_conn_file)
 
 print("Script completed.")

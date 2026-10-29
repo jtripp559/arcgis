@@ -6,9 +6,9 @@ from difflib import unified_diff
 env_packages = {}
 
 envs = [
-    r"\\org-app2\c$\Program Files\ArcGIS\Server\framework\runtime\ArcGIS\bin\Python\envs\arcgispro-py3",
-    r"\\org-app2\c$\Program Files\ArcGIS\Server\framework\runtime\ArcGIS\bin\Python\envs\clone20240610",
-    r"\\org-app2\c$\Program Files\ArcGIS\Server\framework\runtime\ArcGIS\bin\Python\envs\clone20240827"
+    r"\\nbs-app2\c$\Program Files\ArcGIS\Server\framework\runtime\ArcGIS\bin\Python\envs\arcgispro-py3",
+    r"\\nbs-app2\c$\Program Files\ArcGIS\Server\framework\runtime\ArcGIS\bin\Python\envs\clone20240610",
+    r"\\nbs-app2\c$\Program Files\ArcGIS\Server\framework\runtime\ArcGIS\bin\Python\envs\clone20240827"
 ]
 
 def get_environment_packages(env_path):

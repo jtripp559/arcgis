@@ -9,7 +9,7 @@ logging.basicConfig(
 )
 
 # Path to the workspace (SDE connection file)
-workspace = r"D:\GenericArcGISConnectionsDir\ORG_DB4_sde.sde"
+workspace = r"T:\ArcGISDataset\Enterprise\Connections\NBS_Gen_Ref_sde.sde"
 
 # Define the WGS_1984 spatial reference
 wgs84_spatial_ref = arcpy.SpatialReference(4326)  # EPSG code for WGS_1984

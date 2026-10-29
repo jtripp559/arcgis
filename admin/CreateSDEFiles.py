@@ -5,12 +5,12 @@ import getpass
 # now = datetime.datetime.now()
 # Get the directory of the current script
 # script_dir = os.path.dirname(os.path.realpath(__file__))
-script_dir = r"D:\GenericArcGISEnterpriseDir\Creators\Connections"
+script_dir = r"T:\ArcGISDataset\Enterprise\Creators\Connections"
 # Set the workspace to the script directory
 # arcpy.env.workspace = script_dir
 # set output_dir to current directory
 # output_dir = arcpy.env.workspace
-# output_dir = r"D:\GenericArcGISConnectionsDir\general"
+# output_dir = r"T:\ArcGISDataset\Enterprise\Connections\general"
 output_dir = input(f"Enter the directory to output the sde file to (Default: {script_dir}): ")
 if output_dir == '' or output_dir is None:
     output_dir = script_dir
@@ -20,9 +20,9 @@ database_platform = "SQL_SERVER"
 account_authentication = "DATABASE_AUTH"
 save_user_pass = "SAVE_USERNAME"
 # Prompt the user for values
-server = input("Enter the server name (Default: ORG-APP1): ")
+server = input("Enter the server name (Default: NBS-APP1): ")
 if server == '' or server is None:
-    server = "ORG-APP1"
+    server = "NBS-APP1"
 database = input("Enter the database name: ")
 username = input("Enter the server username (Default: general): ")
 if username == '' or username is None:

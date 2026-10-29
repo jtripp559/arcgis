@@ -2,13 +2,13 @@
 ================================================================================
 Script Name  : publish_features_to_agol_bulk.py
 Description  : To publish feature layers in ArcGIS Online (AGOL)
-               getting the information from Example ArcGIS Enterprise Portal
+               getting the information from RRG NBS ArcGIS Enterprise Portal
                by registering each layer as a proxied item using
                stored-credential authentication (serviceUsername/servicePassword).
 
                Workflow
                A. Extract layer metadata:
-                  1. Connects to the Example internal ArcGIS Enterprise Portal and
+                  1. Connects to the RRG NBS internal ArcGIS Enterprise Portal and
                   retrieves all Feature Serviceitems from a
                   specified folder (It helped to set a folder in ArcGIS Portal).
               Outputs a Python list-of-dicts (layer_list)
@@ -29,28 +29,28 @@ Usage        : Run interactively in an ArcGIS Pro Jupyter Notebook or python she
                Requires an active internet connection and valid AGOL credentials.
 
 Inputs       : TARGET_FOLDER  - name of the Portal folder where features are located
-                               (Example here: "Example Place Name")
+                               (Example here: "RRGNBS Cacao Suitability")
                agol_user - name of the AGOL user profile where features will be imported
                agol_pass - password of the AGOL user profile where features will be imported
                GP_USER / GP_PASS - Stored credentials for the Enterprise Portal
                              used to authenticate the proxied service connections.
 
-Outputs      : Proxied Feature/Image Service items published to AGOL under specified
+Outputs      : Proxied Feature/Image Service items published to AGOL under spe=cified
                folder and group, e.g.:
-               folder  : Example Place Name
-               group   : ENT AGO Organization Datashare
+               folder  : RRGNBS Cacao Suitability
+               group   : RRG AGO Organization Datashare
 
 Dependencies : arcgis (ArcGIS API for Python), getpass
                Active ArcGIS Pro / Portal session
-               Valid AGOL account (user name @ myorg.maps.arcgis.com)
-               Valid Enterprise Portal credentials for gis.example.com
+               Valid AGOL account (user name @ rrg.maps.arcgis.com)
+               Valid Enterprise Portal credentials for maps.rrgnbs.com
             
 Notes        : - Items are added to root first then moved to avoid a known
                  NoneType folder in the ArcGIS API for Python.
                - GP_USER / GP_PASS are embedded as plain text; REMOVE password
                from Script.
 
-Author       :
+Author       : guillermo.ponce@rrgnbs.com
 Created      : 2026-03-26
 Last Modified: 2026-04-01
 ================================================================================
@@ -70,7 +70,7 @@ layer_list = []
 # 1. Connect to  Internal Portal (set Portal as active portal in ArcGIS Pro session)
 gis_portal = GIS("pro")
 user = gis_portal.users.me
-print(f'Connecting to ArcGIS Portal https://gis.example.com, user: {user.username}')
+print(f'Connecting to ArcGIS Portal https://maps.rrgnbs.com, user: {user.username}')
 
 # This is the folder where all the features are located in ArcGIS Portal
 TARGET_FOLDER = get_input("Enter folder where features are located in ArcGIS Portal: ")
@@ -106,10 +106,10 @@ for item in folder_items:
 
 # B. Publish feature layers in ArcGIS Online (AGOL)
 # 1. DIRECT LOGIN
-print('Connecting now to AGOL https://myorg.maps.arcgis.com')
+print('Connecting now to AGOL https://rrg.maps.arcgis.com')
 agol_user = get_input("Enter AGOL User")
 agol_pass = getpass.getpass(f"Enter your password for the AGOL Cloud ({agol_user}):")
-gis = GIS("https://myorg.maps.arcgis.com", agol_user, agol_pass)
+gis = GIS("https://rrg.maps.arcgis.com", agol_user, agol_pass)
 print("\nSuccesfull connection to AGOL with full privileges...")
 
 # 2. Configuration to enable the option `Store Credentials`
@@ -118,9 +118,9 @@ GP_USER = "GPUser"
 GP_PASS = (getpass.getpass(f"Enter password for GPUser:")) # Check it in Keeper account and don't forget to remove it from here.
 
 # Set folder and groups
-CLOUD_FOLDER_NAME =  get_input("Folder in AGO to store content, e.g. Example Place Name: ")
+CLOUD_FOLDER_NAME =  get_input("Folder in AGO to store content, e.g. RRGNBS Cacao Suitability: ")
 GROUP_SEARCH_TERM = (
-    get_input("Group in AGO to store content, e.g. Example Organization Organization (Internal): ")  ## Check the best group to use here
+    get_input("Group in AGO to store content, e.g. RRG Nature Based Solutions Organization (Internal): ")  ## Check the best group to use here
 )
 
 # 3. Create Folder Safely (Ignores if it already exists)

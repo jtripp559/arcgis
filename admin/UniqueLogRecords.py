@@ -3,7 +3,7 @@ import os
 import glob
 # from pprint import pprint
 # Define the directory path containing the CSV files
-directory_path = r'C:\MS\OneDrive - Example Organization, Inc\SharePoint - ORG - GIS and IT\Programming\Monitoring\ORG ArcGIS Server Logs'
+directory_path = r'C:\MS\OneDrive - RRG Nature Based Solutions, Inc\SharePoint - NBS - GIS and IT\Programming\Monitoring\NBS ArcGIS Server Logs'
 # Find all CSV files in the directory
 csv_files = glob.glob(os.path.join(directory_path, '*.csv'))
 # Initialize an empty DataFrame to hold all data

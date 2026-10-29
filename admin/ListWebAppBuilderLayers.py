@@ -116,33 +116,33 @@ def connect_to_arcgis():
     connected = False
 
     # ArcGIS Online
-    portal_url_agol = 'https://myorg.maps.arcgis.com'
+    portal_url_agol = 'https://rrg.maps.arcgis.com'
     base_url_agol = 'https://services.arcgis.com/cb1XtHtD3d6ZWNAQ/arcgis/rest/services'
     # Old ArcGIS Enterprise
-    portal_url_ent = 'https://gis2.example.com/portal'
-    base_url_ent = 'https://gis2.example.com/server/rest/services'
+    portal_url_rrg = 'https://gis.renewablegroup.com/portal'
+    base_url_rrg = 'https://gis.renewablegroup.com/server/rest/services'
     # New ArcGIS Enterprise
-    portal_url_org = 'https://gis.example.com/arcgisportal'
-    base_url_org = 'https://gis.example.com/arcgisserver/rest/services/'
+    portal_url_nbs = 'https://maps.rrgnbs.com/arcgisportal'
+    base_url_nbs = 'https://maps.rrgnbs.com/arcgisserver/rest/services/'
     
-    which_portal = get_user_input("Which ArcGIS portal (AGOL, ENT, ORG)", default_value='AGOL')
+    which_portal = get_user_input("Which ArcGIS portal (AGOL, RRG, NBS)", default_value='AGOL')
     which_portal = which_portal.upper()
     if which_portal.startswith('A'):
         PORTAL_URL = portal_url_agol
         base_url = base_url_agol
         selected_portal = 'AGOL'
     elif which_portal.startswith('R'):
-        PORTAL_URL = portal_url_ent
-        base_url = base_url_ent
-        selected_portal = 'ENT'
+        PORTAL_URL = portal_url_rrg
+        base_url = base_url_rrg
+        selected_portal = 'RRG'
     else:
-        PORTAL_URL = portal_url_org
-        base_url = base_url_org
-        selected_portal = 'ORG'
+        PORTAL_URL = portal_url_nbs
+        base_url = base_url_nbs
+        selected_portal = 'NBS'
     FILENAME_BASE = f'{FILENAME_BASE}_{selected_portal}'
     
     # Get arcgis_username and password from the user
-    arcgis_username = get_user_input("ArcGIS Username (not SSO)")
+    arcgis_username = get_user_input("ArcGIS Username (not SSO)", default_value='rrgadmin')
     arcgis_password = getpass.getpass(f"**  ArcGIS Password for {arcgis_username}: ")
     if arcgis_username == "" or arcgis_password == "":
         log_message("Missing username or password.", level='error')

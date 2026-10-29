@@ -5,14 +5,14 @@ import logging
 from datetime import datetime
 from getpass import getpass
 
-# workspace_full_path = r"D:\GenericArcGISConnectionsDir\ORG_DB5_sde.sde"
+# workspace_full_path = r"T:\ArcGISDataset\Enterprise\Connections\NBS_WS_sde.sde"
 workspace_full_path = ''
 workspace_paths = {
-    'W': r"D:\GenericArcGISConnectionsDir\ORG_DB5_sde.sde",
-    'M': r"D:\GenericArcGISConnectionsDir\ORG_DB2_sde.sde",
-    'B': r"D:\GenericArcGISConnectionsDir\ORG_Generic_sde.sde",
-    'G': r"D:\GenericArcGISConnectionsDir\ORG_DB4_sde.sde",
-    'C': r"D:\GenericArcGISConnectionsDir\ORG_DB1_sde.sde"
+    'W': r"T:\ArcGISDataset\Enterprise\Connections\NBS_WS_sde.sde",
+    'M': r"T:\ArcGISDataset\Enterprise\Connections\NBS_MaxEnt_sde.sde",
+    'B': r"T:\ArcGISDataset\Enterprise\Connections\NBS_WaterBalance_sde.sde",
+    'G': r"T:\ArcGISDataset\Enterprise\Connections\NBS_Gen_Ref_sde.sde",
+    'C': r"T:\ArcGISDataset\Enterprise\Connections\NBS_ClimateSimilarity_sde.sde"
 }
 connected_to_arcgis = False
 
@@ -44,12 +44,12 @@ def log_message(msg, level='info', print_msg=True):
 def init_arcpy():
     global workspace_full_path
     try:
-        arcpy.env.mask = r"D:\GenericArcGISDataDir\GIS\General GIS Data\Worldwide\World.shp"
+        arcpy.env.mask = r"T:\ArcGISDataset\GIS\General GIS Data\Worldwide\World.shp"
         arcpy.env.cellSize = "MINOF"
         arcpy.env.overwriteOutput = True
         
-        # ask the user which sde to use (ORG or DB2)
-        sde_path = get_user_input("Which DB will you be importing into? (OPTIONS - W: ORG_WS, M: ORG_DB2, C: ORG_DB1, G: ORG_Gen_Ref, B: ORG_Generic)")
+        # ask the user which sde to use (NBS or MaxEnt)
+        sde_path = get_user_input("Which DB will you be importing into? (OPTIONS - W: NBS_WS, M: NBS_MaxEnt, C: NBS_ClimateSimilarity, G: NBS_Gen_Ref, B: NBS_WaterBalance)")
         sde_path = sde_path.upper().strip()[0]
         workspace_full_path = workspace_paths.get(sde_path, workspace_full_path)
         if workspace_full_path == '' or workspace_full_path is None:
@@ -106,35 +106,35 @@ def connect_to_arcgis():
     connected = False
 
     # ArcGIS Online
-    arcgis_url_agol = 'https://myorg.maps.arcgis.com'
+    arcgis_url_agol = 'https://rrg.maps.arcgis.com'
     base_url_agol = 'https://services.arcgis.com/cb1XtHtD3d6ZWNAQ/arcgis/rest/services'
     # Old ArcGIS Enterprise
-    arcgis_url_ent = 'https://gis2.example.com/portal'
-    base_url_ent = 'https://gis2.example.com/server/rest/services'
+    arcgis_url_rrg = 'https://gis.renewablegroup.com/portal'
+    base_url_rrg = 'https://gis.renewablegroup.com/server/rest/services'
     # New ArcGIS Enterprise
-    arcgis_url_org = 'https://gis.example.com/arcgisportal'
-    base_url_org = 'https://gis.example.com/arcgisserver/rest/services/'
+    arcgis_url_nbs = 'https://maps.rrgnbs.com/arcgisportal'
+    base_url_nbs = 'https://maps.rrgnbs.com/arcgisserver/rest/services/'
     
-    which_portal = get_user_input("Which ArcGIS portal (AGOL, ENT, ORG)", default_value='ORG')
+    which_portal = get_user_input("Which ArcGIS portal (AGOL, RRG, NBS)", default_value='NBS')
     which_portal = which_portal.upper()
     if which_portal.startswith('A'):
         arcgis_url = arcgis_url_agol
         # base_url = base_url_agol
         # selected_portal = 'AGOL'
     elif which_portal.startswith('R'):
-        arcgis_url = arcgis_url_ent
-        # base_url = base_url_ent
-        # selected_portal = 'ENT'
+        arcgis_url = arcgis_url_rrg
+        # base_url = base_url_rrg
+        # selected_portal = 'RRG'
     else:
-        arcgis_url = arcgis_url_org
-        # base_url = base_url_org
-        # selected_portal = 'ORG'
+        arcgis_url = arcgis_url_nbs
+        # base_url = base_url_nbs
+        # selected_portal = 'NBS'
     
-    # # Get ArcGIS URL from the user or default to 'https://gis.example.com/arcgisportal'
+    # # Get ArcGIS URL from the user or default to 'https://maps.rrgnbs.com/arcgisportal'
     # arcgis_url = get_user_input("ArcGIS URL", default_value=arcgis_url)
     
     # Get arcgis_username and password from the user
-    arcgis_username = get_user_input("ArcGIS Username (not SSO)", default_value='gisadmin')
+    arcgis_username = get_user_input("ArcGIS Username (not SSO)", default_value='rrgadmin')
     arcgis_password = getpass(f"**  ArcGIS Password for {arcgis_username}: ")
     if arcgis_username == "" or arcgis_password == "":
         print("Missing username or password.")
@@ -159,8 +159,8 @@ def connect_to_arcgis():
 # List tifs to compress
 log_message("Getting raster files...")
 rasterList = [
-    (r"D:\GenericArcGISDataDir\OutputDir1\GFW\GFW_gain.tif", "GFW_gain"),
-    (r"D:\GenericArcGISDataDir\OutputDir1\GFW\GFW_lossyear.tif", "GFW_lossyear")
+    (r"T:\ArcGISDataset\Rasters\GlobalProspector\GFW\GFW_gain.tif", "GFW_gain"),
+    (r"T:\ArcGISDataset\Rasters\GlobalProspector\GFW\GFW_lossyear.tif", "GFW_lossyear")
 ]
 '''
 rasterList = [
@@ -181,11 +181,11 @@ rasterList = [
 '''
 
 '''
-rasterList = list_raster_files(r'D:\GenericArcGISDataDir\OutputDir1\CHELSA\1WorldWide\V2\Tas\Scaled\CF\Monthly\2041-2070')
-rasterList.extend(list_raster_files(r'D:\GenericArcGISDataDir\OutputDir1\CHELSA\1WorldWide\V2\Tasmin\Scaled\CF\Monthly\2041-2070'))
-rasterList.extend(list_raster_files(r'D:\GenericArcGISDataDir\OutputDir1\CHELSA\1WorldWide\V2\Tasmax\Scaled\CF\Monthly\2041-2070'))
-rasterList.extend(list_raster_files(r'D:\GenericArcGISDataDir\OutputDir1\CHELSA\1WorldWide\V2\Pr\Scaled\CF\Monthly\2011-2040'))
-rasterList.extend(list_raster_files(r'D:\GenericArcGISDataDir\OutputDir1\CHELSA\1WorldWide\V2\Pr\Scaled\CF\Monthly\2041-2070'))
+rasterList = list_raster_files(r'T:\ArcGISDataset\Rasters\GlobalProspector\CHELSA\1WorldWide\V2\Tas\Scaled\CF\Monthly\2041-2070')
+rasterList.extend(list_raster_files(r'T:\ArcGISDataset\Rasters\GlobalProspector\CHELSA\1WorldWide\V2\Tasmin\Scaled\CF\Monthly\2041-2070'))
+rasterList.extend(list_raster_files(r'T:\ArcGISDataset\Rasters\GlobalProspector\CHELSA\1WorldWide\V2\Tasmax\Scaled\CF\Monthly\2041-2070'))
+rasterList.extend(list_raster_files(r'T:\ArcGISDataset\Rasters\GlobalProspector\CHELSA\1WorldWide\V2\Pr\Scaled\CF\Monthly\2011-2040'))
+rasterList.extend(list_raster_files(r'T:\ArcGISDataset\Rasters\GlobalProspector\CHELSA\1WorldWide\V2\Pr\Scaled\CF\Monthly\2041-2070'))
 '''
 
 init_arcpy()
@@ -201,7 +201,7 @@ for raster, db_name in rasterList:
     # outName = os.path.basename(raster).replace('.tif','').replace('-','_')
     db_name = db_name.replace('-','_')
     log_message(f"Processing {db_name}")
-    # outRaster = r"D:\GenericArcGISConnectionsDir\ORG_DB5_sde.sde\SDE.{}".format(db_name)
+    # outRaster = r"T:\ArcGISDataset\Enterprise\Connections\NBS_WS_sde.sde\SDE.{}".format(db_name)
     db_name = f"SDE.{db_name}"
     outRaster = os.path.join(workspace_full_path, db_name)
     if arcpy.Exists(outRaster):

@@ -2,10 +2,10 @@ import arcpy
 import traceback
 import getpass
 
-workspace_full_path = r"D:\GenericArcGISConnectionsDir\ORG_Generic_sde.sde"
-portal_url="https://gis.example.com/arcgisportal"
+workspace_full_path = r"T:\ArcGISDataset\Enterprise\Connections\NBS_WaterBalance_sde.sde"
+portal_url="https://maps.rrgnbs.com/arcgisportal"
 
-input_feature = f"{workspace_full_path}/SDE.ENT_L0BASINATLAS_V10_LEV09"
+input_feature = f"{workspace_full_path}/SDE.RRG_L0BASINATLAS_V10_LEV09"
 output_feature = f"{workspace_full_path}/SDE.BasinATLAS_lev09"
 
 fields_to_keep = ["HYBAS_ID", "hybas_lev_idx", "hybas_level", "region_id"]
@@ -22,7 +22,7 @@ except Exception as e:
     
 if connected:
     connected = False
-    portal_username = 'gisadmin'
+    portal_username = 'rrgadmin'
     portal_password = getpass.getpass(f"**  ArcGIS Portal Password for {portal_username}: ")
     if portal_username == "" or portal_password == "":
         print("Missing portal username or password.")

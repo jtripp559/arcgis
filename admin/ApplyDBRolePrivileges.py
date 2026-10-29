@@ -1,7 +1,7 @@
 # ApplyDBRolePrivileges.py
 #
 # Created By:   Julie Tripp
-#
+#               julie.tripp@rrgnbs.com
 #               12/04/2025
 #
 # Description:
@@ -11,7 +11,7 @@
 
 # Initialize parameters:
 # SDE files/directory configuration
-SDE_DIRECTORY = r"D:\GenericArcGISConnectionsDir"
+SDE_DIRECTORY = r"T:\ArcGISDataset\Enterprise\Connections"
 SDE_FILE_MASK = "*_sde*.sde"
 SDE_FILE_MASK_EXCLUDE = "*old*.sde"
 SPECIFIC_SDE_FILES = []  # e.g., [r"C:\path\to\connection1.sde", r"C:\path\to\connection2.sde"]
